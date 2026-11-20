@@ -32,17 +32,17 @@ jobs:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/gba-ds.jks"
-            echo "GBADS_KEYSTORE=$RUNNER_TEMP/gba-ds.jks" >> "$GITHUB_ENV"
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/psx-ds.jks"
+            echo "PSXDS_KEYSTORE=$RUNNER_TEMP/psx-ds.jks" >> "$GITHUB_ENV"
           else
             echo "::warning::No ANDROID_KEYSTORE_B64 secret: this APK is debug-signed and won't install over a release-signed one."
           fi
 
       - name: Build
         env:
-          GBADS_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          GBADS_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          GBADS_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          PSXDS_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          PSXDS_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          PSXDS_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           sudo apt-get install -y ninja-build >/dev/null
           export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME}"

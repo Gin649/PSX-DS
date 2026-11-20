@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Renders the square GBA DS icon: two stacked rounded screens with a glass
+"""Renders the square PSX-DS icon: two stacked rounded screens with a glass
 sheen, lettered in the logo's style (GBA on the top screen, DS on the bottom).
 
-    tools/make_icon.py FUTURA_BOLD_ITALIC.otf GAMECUBEN.ttf [OUT.png]
+    tools/make_icon.py [FONT.ttf] [OUT.png]   (font: Jost Bold Italic from assets/fonts)
 
-Default output: assets/brand/gba-ds-icon.png (1024x1024, very light purple background). Needs Pillow.
+Default output: assets/brand/psx-ds-icon.png (1024x1024, very light purple background). Needs Pillow.
 """
 import os
 import sys
@@ -112,23 +112,21 @@ def place(canvas, img, box, fill=0.78):
 
 
 def main():
-    if len(sys.argv) < 3:
-        sys.exit(__doc__)
-    futura, gamecuben = sys.argv[1], sys.argv[2]
-    out = sys.argv[3] if len(sys.argv) > 3 else os.path.join(ROOT, "assets", "brand", "gba-ds-icon.png")
+    futura = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "assets", "fonts", "Jost-700-BoldItalic.ttf")
+    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, "assets", "brand", "psx-ds-icon.png")
 
     img = Image.new("RGBA", (S, S), BACKGROUND)
-    # two 3:2 screens stacked, filling the square
+    # two 4:3 screens stacked, filling the square
     m, gap = 72, 44   # margin to the edge of the image, gap between screens
     sh = (1024 - 2 * m - gap) / 2
-    sw = sh * 1.5
+    sw = sh * 4 / 3
     x0 = (1024 - sw) / 2
     top = screen(img, (x0, m, x0 + sw, m + sh))
     bot = screen(img, (x0, m + sh + gap, x0 + sw, 1024 - m))
 
     cap = 400
-    place(img, word("GBA", futura, cap, 88), tuple(k(v) for v in top), fill=0.80)
-    place(img, word("DS", gamecuben, cap, 88), tuple(k(v) for v in bot), fill=0.66)
+    place(img, word("PSX", futura, cap, 88), tuple(k(v) for v in top), fill=0.80)
+    place(img, word("DS", futura, cap, 88), tuple(k(v) for v in bot), fill=0.66)
 
     # grey border around the edge of the image
     ImageDraw.Draw(img).rectangle((0, 0, S - 1, S - 1), outline=BORDER, width=k(12))

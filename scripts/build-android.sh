@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds the Android APK (arm64-v8a): dist/gba-ds-vX.Y.Z-android.apk.
+# Builds the Android APK (arm64-v8a): dist/psx-ds-vX.Y.Z-android.apk.
 #
 # Needs: the Android SDK (ANDROID_HOME or ANDROID_SDK_ROOT) with an NDK
 # (ANDROID_NDK_HOME, or ANDROID_NDK_LATEST_HOME as on GitHub's runners),
@@ -7,8 +7,8 @@
 # (the same versions as the ROCKNIX build). The Claude workspace can't
 # download the SDK, so this runs on GitHub Actions (.github/workflows/android.yml).
 #
-# Release signing: set GBADS_KEYSTORE (path), GBADS_KEYSTORE_PASSWORD,
-# GBADS_KEY_ALIAS, GBADS_KEY_PASSWORD; without them the APK is debug-signed.
+# Release signing: set PSXDS_KEYSTORE (path), PSXDS_KEYSTORE_PASSWORD,
+# PSXDS_KEY_ALIAS, PSXDS_KEY_PASSWORD; without them the APK is debug-signed.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
@@ -77,7 +77,7 @@ cp assets/fonts/Jost-OFL.txt "$LIC/Jost-OFL.txt"
 cp third_party/rcheevos/LICENSE "$LIC/rcheevos-LICENSE.txt"
 cp third_party/libwebp/COPYING "$LIC/libwebp-COPYING.txt"
 cp third_party/libwebp/PATENTS "$LIC/libwebp-PATENTS.txt"
-printf "PSX-DS %s is free software under the GNU General Public License, version 3 only (PSX-DS-LICENSE.txt).\nIt is a fork of GBA DS by kyannon: https://github.com/kyannon/gba-ds\nPlayStation emulation: SwanStation (c) its authors, GPL-3.0 (SwanStation-LICENSE.txt): https://github.com/libretro/swanstation (commit %s)\nIt statically links libmgba (c) Jeffrey Pfau, MPL-2.0.\nmGBA source: https://github.com/mgba-emu/mgba (commit %s)\nSDL2 (c) Sam Lantinga, zlib licence: https://github.com/libsdl-org/SDL (%s)\nIts text is set in Jost (c) The Jost Project Authors, SIL Open Font License 1.1 (Jost-OFL.txt).\nRetroAchievements support: rcheevos (c) RetroAchievements, MIT (rcheevos-LICENSE.txt), %s.\nWebP images: libwebp (c) Google Inc., BSD 3-clause (libwebp-COPYING.txt, libwebp-PATENTS.txt), v1.6.0.\nPSX-DS source: https://github.com/Gin649/PSX-DS\n" \
+printf "PSX-DS %s is free software under the GNU General Public License, version 3 only (PSX-DS-LICENSE.txt).\nIt is a fork of PSX-DS by kyannon: https://github.com/kyannon/gba-ds\nPlayStation emulation: SwanStation (c) its authors, GPL-3.0 (SwanStation-LICENSE.txt): https://github.com/libretro/swanstation (commit %s)\nIt statically links libmgba (c) Jeffrey Pfau, MPL-2.0.\nmGBA source: https://github.com/mgba-emu/mgba (commit %s)\nSDL2 (c) Sam Lantinga, zlib licence: https://github.com/libsdl-org/SDL (%s)\nIts text is set in Jost (c) The Jost Project Authors, SIL Open Font License 1.1 (Jost-OFL.txt).\nRetroAchievements support: rcheevos (c) RetroAchievements, MIT (rcheevos-LICENSE.txt), %s.\nWebP images: libwebp (c) Google Inc., BSD 3-clause (libwebp-COPYING.txt, libwebp-PATENTS.txt), v1.6.0.\nPSX-DS source: https://github.com/Gin649/PSX-DS\n" \
 	"$VERSION" "$(git -C "$DEPS/swanstation" rev-parse --short HEAD)" "$(git -C "$DEPS/mgba" rev-parse --short HEAD)" "$SDL_BRANCH" "$(tail -1 third_party/rcheevos/VERSION)" > "$LIC/README.txt"
 
 # (no longer packed: the default overlays the APK carried before the bezel was drawn by the app)

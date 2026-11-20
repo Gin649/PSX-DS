@@ -2,12 +2,12 @@ The Android version is made for the **Anbernic RG DS Plus on GammaOS** (Android 
 
 ## Install
 
-1. Download the latest `gba-ds-v…-android.apk` from the [Releases page](https://github.com/kyannon/gba-ds/releases).
+1. Download the latest `psx-ds-v…-android.apk` from the [Releases page](https://github.com/Gin649/PSX-DS/releases).
 2. Open it on the device and install it. Android asks once to allow installing from your file manager or browser; allow it.
-3. Open **GBA DS**. The first time, it explains why it needs **All files access**; tap **Continue**, switch it on for GBA DS on Android's settings page, and go back. It needs this to read ROMs from any folder, and to keep its files in a folder you can reach. (**Not now** goes on without it and doesn't ask again; you can switch it on later in Android's settings.)
+3. Open **PSX-DS**. The first time, it explains why it needs **All files access**; tap **Continue**, switch it on for PSX-DS on Android's settings page, and go back. It needs this to read ROMs from any folder, and to keep its files in a folder you can reach. (**Not now** goes on without it and doesn't ask again; you can switch it on later in Android's settings.)
 4. Put your ROMs in **`ROMs/gba`** on the internal storage (subfolders are fine; `.gba`, `.zip` or `.7z`), or pick another folder in the game list's **Settings** (tap it, top right, or press **SELECT**) → **Folders** → **Choose ROM folder**.
 
-**Updating:** in the game list, **Settings** > **Updates** > **Check now**, then **Update now**: GBA DS downloads the new APK and Android asks you to confirm installing it (GBA DS also offers new versions by itself once a day; see [[Playing#updates]]). Or install the new APK over the old one by hand. Everything is kept either way: release APKs are all signed with the same key.
+**Updating:** in the game list, **Settings** > **Updates** > **Check now**, then **Update now**: PSX-DS downloads the new APK and Android asks you to confirm installing it (PSX-DS also offers new versions by itself once a day; see [[Playing#updates]]). Or install the new APK over the old one by hand. Everything is kept either way: release APKs are all signed with the same key.
 
 ## Screens and buttons
 
@@ -19,49 +19,49 @@ Android keeps HOME for itself, so the pause menu opens with:
 
 Everything else works as on ROCKNIX; see [[Playing]].
 
-## The GBA DS folder
+## The PSX-DS folder
 
-Everything except the battery saves lives in a **`GBA DS`** folder on the internal storage, laid out like the ROCKNIX install folder:
+Everything except the battery saves lives in a **`PSX-DS`** folder on the internal storage, laid out like the ROCKNIX install folder:
 
 | Path | What |
 |---|---|
-| `GBA DS/states/` | save states, resume points, menu settings (`prefs.cfg`), the game list's settings (`library.cfg`), extracted logos, the RetroAchievements sign-in and badges |
-| `GBA DS/cheats/` | your RetroArch `.cht` cheat files (subfolders are fine) |
-| `GBA DS/overlays/` | your own overlay PNGs (see [[Overlays]]) |
-| `GBA DS/logos/` | your own logo images (`<CODE>.png`), used instead of the extracted ones |
-| `GBA DS/patches/` | patches (`.ips`, `.ups`, `.bps`, `.xdelta`), in a folder for each game made by GBA DS (see [Playing](Playing#patches)) |
-| `GBA DS/screenshots/` | Take Screenshot's PNGs |
-| `GBA DS/bug-reports/` | bug reports from the quick bar's bug button |
-| `GBA DS/gba-ds.cfg` | optional: settings from [[Settings]] (create it; only the lines you want to change) |
-| `GBA DS/gba-ds.log` | the log of the last run |
-| `GBA DS/launch.log` | what frontends sent when they started GBA DS (see [[Launching from Android frontends]]) |
+| `PSX-DS/states/` | save states, resume points, menu settings (`prefs.cfg`), the game list's settings (`library.cfg`), extracted logos, the RetroAchievements sign-in and badges |
+| `PSX-DS/cheats/` | your RetroArch `.cht` cheat files (subfolders are fine) |
+| `PSX-DS/overlays/` | your own overlay PNGs (see [[Overlays]]) |
+| `PSX-DS/logos/` | your own logo images (`<CODE>.png`), used instead of the extracted ones |
+| `PSX-DS/patches/` | patches (`.ips`, `.ups`, `.bps`, `.xdelta`), in a folder for each game made by PSX-DS (see [Playing](Playing#patches)) |
+| `PSX-DS/screenshots/` | Take Screenshot's PNGs |
+| `PSX-DS/bug-reports/` | bug reports from the quick bar's bug button |
+| `PSX-DS/psx-ds.cfg` | optional: settings from [[Settings]] (create it; only the lines you want to change) |
+| `PSX-DS/psx-ds.log` | the log of the last run |
+| `PSX-DS/launch.log` | what frontends sent when they started PSX-DS (see [[Launching from Android frontends]]) |
 
 Battery saves (`.sav`) are kept next to the ROMs by default, as on ROCKNIX, so other emulators can use them. **Settings** → **Folders** can keep them in a folder of their own instead (see below).
 
-Without All files access, these are kept in the app's own folder (`Android/data/io.github.kyannon.gbads/files`) instead, which other apps (and you, on newer Android) can't open.
+Without All files access, these are kept in the app's own folder (`Android/data/io.github.gin649.psxds/files`) instead, which other apps (and you, on newer Android) can't open.
 
-To keep this folder somewhere else (in a folder for all your emulators, say), use **Settings** → **Folders** → **Choose GBA DS folder** (below).
+To keep this folder somewhere else (in a folder for all your emulators, say), use **Settings** → **Folders** → **Choose PSX-DS folder** (below).
 
 ## Game list settings
 
 **Settings** in the game list (tap it, or **SELECT**) has, on Android:
 - **Folders**:
-  - **Choose ROM folder**: pick the folder GBA DS lists (Android's folder picker).
+  - **Choose ROM folder**: pick the folder PSX-DS lists (Android's folder picker).
   - **Choose save folder**: keep battery saves in a folder of their own instead of next to the ROMs (**Keep saves next to the games** goes back). The first time you play a game, its save from next to the ROM is copied there (and left where it was). Saves already in the save folder aren't moved back if you switch back: copy them yourself.
   - **Save files: .sav / .srm (RetroArch's)**: `.srm` is the type RetroArch uses. To share each game's save with RetroArch, choose `.srm` and RetroArch's saves folder (`RetroArch/saves`, or the core's folder in it if RetroArch sorts saves by core). A save in the other type is copied over the first time you play a game.
   
-  All three are kept in `states/library.cfg`. A save folder outside the `GBA DS` folder needs All files access.
-  - **Choose GBA DS folder**: where the `GBA DS` folder itself goes. Pick an empty folder (make one in the picker) and GBA DS uses it as its folder; pick a folder with other things in it, such as `Emulators`, and GBA DS makes a `GBA DS` folder inside it. Close GBA DS and open it again: everything moves there before the game list opens, and the old folder goes. Picking a folder that already has GBA DS's files in it (from before) uses those as they are. The choice is kept in the app's own storage, so updates keep it; uninstalling forgets it (the folder and your files stay where they are: choose it again after reinstalling). Needs All files access.
-- **RetroAchievements: Sign In / Sign Out**: sign in with your retroachievements.org username and password. GBA DS keeps a sign-in token, not the password, and signs in by itself from then on. See [Playing](Playing#retroachievements).
-- **Map Buttons**: if a button does the wrong thing, or for a controller GBA DS doesn't know, set each button by where it sits (see [Playing](Playing#mapping-the-buttons)). Android keeps HOME (and usually BACK) for itself, so skip **Home** with a tap: SELECT + START or BACK still open the menu. The mapping is kept in `GBA DS/states/controllers.txt`.
-- **Hotkeys** (beside Map Buttons): change the shortcuts, the hotkey button held with another (see [Playing](Playing#hotkeys)). On Android the hotkey button is BACK by default (Android keeps HOME), shown as **Back**; SELECT, START or L3 can be the hotkey instead. Kept in `GBA DS/states/hotkeys.cfg`.
+  All three are kept in `states/library.cfg`. A save folder outside the `PSX-DS` folder needs All files access.
+  - **Choose PSX-DS folder**: where the `PSX-DS` folder itself goes. Pick an empty folder (make one in the picker) and PSX-DS uses it as its folder; pick a folder with other things in it, such as `Emulators`, and PSX-DS makes a `PSX-DS` folder inside it. Close PSX-DS and open it again: everything moves there before the game list opens, and the old folder goes. Picking a folder that already has PSX-DS's files in it (from before) uses those as they are. The choice is kept in the app's own storage, so updates keep it; uninstalling forgets it (the folder and your files stay where they are: choose it again after reinstalling). Needs All files access.
+- **RetroAchievements: Sign In / Sign Out**: sign in with your retroachievements.org username and password. PSX-DS keeps a sign-in token, not the password, and signs in by itself from then on. See [Playing](Playing#retroachievements).
+- **Map Buttons**: if a button does the wrong thing, or for a controller PSX-DS doesn't know, set each button by where it sits (see [Playing](Playing#mapping-the-buttons)). Android keeps HOME (and usually BACK) for itself, so skip **Home** with a tap: SELECT + START or BACK still open the menu. The mapping is kept in `PSX-DS/states/controllers.txt`.
+- **Hotkeys** (beside Map Buttons): change the shortcuts, the hotkey button held with another (see [Playing](Playing#hotkeys)). On Android the hotkey button is BACK by default (Android keeps HOME), shown as **Back**; SELECT, START or L3 can be the hotkey instead. Kept in `PSX-DS/states/hotkeys.cfg`.
 - **Updates**: check for a new version and install it (see Updating, above).
 
 ## Starting games from a launcher
 
-GBA DS can be started straight into a game by GammaOS's own launcher, Daijisho, ES-DE and others: see **[[Launching from Android frontends]]**.
+PSX-DS can be started straight into a game by GammaOS's own launcher, Daijisho, ES-DE and others: see **[[Launching from Android frontends]]**.
 
 ## Known limits
 
-- **Coming back from the home screen** (*experimental*): leaving GBA DS saves the game's resume point (Android may close apps in the background). Coming back, the game should be paused with the menu open; GammaOS on the RG DS Plus doesn't switch between apps reliably enough to test this.
-- **Performance:** in testing on the RG DS Plus, games run at full speed (about 60 frames a second) with the occasional single slow frame. **Frame Buffer** (pause menu → Display) smooths those out at the cost of one frame of input delay. `gba-ds.log` lists slow frames with what took the time.
+- **Coming back from the home screen** (*experimental*): leaving PSX-DS saves the game's resume point (Android may close apps in the background). Coming back, the game should be paused with the menu open; GammaOS on the RG DS Plus doesn't switch between apps reliably enough to test this.
+- **Performance:** in testing on the RG DS Plus, games run at full speed (about 60 frames a second) with the occasional single slow frame. **Frame Buffer** (pause menu → Display) smooths those out at the cost of one frame of input delay. `psx-ds.log` lists slow frames with what took the time.

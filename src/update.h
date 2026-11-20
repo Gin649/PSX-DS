@@ -3,8 +3,8 @@
  * folder, then a restart. Android: the APK, handed to Android's package
  * installer, which asks the player to confirm. The web build gets no-op
  * stubs. */
-#ifndef GBADS_UPDATE_H
-#define GBADS_UPDATE_H
+#ifndef PSXDS_UPDATE_H
+#define PSXDS_UPDATE_H
 
 #include "config.h"
 
@@ -33,9 +33,9 @@ typedef struct {
 	bool autoOn;
 } UpdateInfo;
 
-/* (not in a side build, GBADS_SIDE: it would replace itself with the release) */
-#if !defined(__wasi__) && !defined(GBADS_SIDE)
-#define GBADS_UPDATES 1
+/* (not in a side build, PSXDS_SIDE: it would replace itself with the release) */
+#if !defined(__wasi__) && !defined(PSXDS_SIDE)
+#define PSXDS_UPDATES 1
 /* exeDir: the app's folder; argv: for the restart */
 void update_init(const Config* cfg, const char* exeDir, int argc, char** argv);
 /* The game list opened: check in the background if automatic checks are on
@@ -52,7 +52,7 @@ void update_info(UpdateInfo* out);
 bool update_notice_pending(void);
 void update_notice_seen(void);
 /* After everything is shut down: start the new version. Under a launch.sh
- * that can start it itself (GBADS_RELAUNCH_STATUS: its new launch.sh too),
+ * that can start it itself (PSXDS_RELAUNCH_STATUS: its new launch.sh too),
  * returns that exit status for main() to end with; else execs the new
  * binary in place and returns 0 only if it couldn't. 0 when there's no
  * update to start. */

@@ -1,6 +1,6 @@
 /* Cheats from RetroArch .cht files (libretro-database layout). */
-#ifndef GBADS_CHEATS_H
-#define GBADS_CHEATS_H
+#ifndef PSXDS_CHEATS_H
+#define PSXDS_CHEATS_H
 
 #include "config.h"
 #include "emu.h"

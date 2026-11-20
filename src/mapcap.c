@@ -91,7 +91,7 @@ static bool screen_matches(const MapProfile* p, const uint32_t* fb) {
 	int hit = 0;
 	for (int i = 0; i < n; ++i) {
 		const Probe* pr = &p->probes[i];
-		if (color_near(fb[pr->y * GBA_W + pr->x], pr->rgb, p->tolerance)) {
+		if (color_near(fb[pr->y * SCREEN_W + pr->x], pr->rgb, p->tolerance)) {
 			++hit;
 		}
 	}
@@ -102,7 +102,7 @@ static bool screen_matches(const MapProfile* p, const uint32_t* fb) {
 		int fg = 0;
 		for (int y = p->crop_y; y < p->crop_y + p->crop_h && fg < p->minForeground; ++y) {
 			for (int x = p->crop_x; x < p->crop_x + p->crop_w; ++x) {
-				if (!color_near(fb[y * GBA_W + x], p->bgColor, p->tolerance) && ++fg >= p->minForeground) {
+				if (!color_near(fb[y * SCREEN_W + x], p->bgColor, p->tolerance) && ++fg >= p->minForeground) {
 					break;
 				}
 			}
@@ -148,7 +148,7 @@ static void find_tile(MapCapture* mc, const uint32_t* fb) {
 		for (int x = mc->cx + ((p->gridX - mc->cx) % k + k) % k; x + k <= mc->cx + mc->cw && n < MAXC; x += k) {
 			uint64_t h = 1469598103934665603ull;
 			for (int j = 0; j < k; ++j) {
-				for (int i = 0; i < k; ++i) h = (h ^ fb[(y + j) * GBA_W + x + i]) * 1099511628211ull;
+				for (int i = 0; i < k; ++i) h = (h ^ fb[(y + j) * SCREEN_W + x + i]) * 1099511628211ull;
 			}
 			hash[n] = h;
 			cellX[n] = x;
@@ -164,7 +164,7 @@ static void find_tile(MapCapture* mc, const uint32_t* fb) {
 	}
 	if (best < 0 || bestCount < 4) return;
 	for (int j = 0; j < k; ++j) {
-		for (int i = 0; i < k; ++i) mc->tile[j * k + i] = fb[(cellY[best] + j) * GBA_W + cellX[best] + i];
+		for (int i = 0; i < k; ++i) mc->tile[j * k + i] = fb[(cellY[best] + j) * SCREEN_W + cellX[best] + i];
 	}
 	mc->tileValid = true;
 }
@@ -410,7 +410,7 @@ static void patch_under(MapCapture* mc, uint32_t* out) {
 		int x0 = IMAX(p->underRect[r].x0, mc->cx), x1 = IMIN(p->underRect[r].x1, mc->cx + mc->cw - 1);
 		int y0 = IMAX(p->underRect[r].y0, mc->cy), y1 = IMIN(p->underRect[r].y1, mc->cy + mc->ch - 1);
 		for (int y = y0; y <= y1; ++y) {
-			for (int x = x0; x <= x1; ++x) out[(y - mc->cy) * mc->cw + (x - mc->cx)] = mc->under[y * GBA_W + x];
+			for (int x = x0; x <= x1; ++x) out[(y - mc->cy) * mc->cw + (x - mc->cx)] = mc->under[y * SCREEN_W + x];
 		}
 	}
 }
@@ -429,7 +429,7 @@ static void grab_under(MapCapture* mc, Emu* s) {
 	emu_layers(s, p->underLayers);
 	emu_state_load(s, mc->underState);
 	emu_frame(s, 0);
-	memcpy(mc->under, s->fb, GBA_W * GBA_H * sizeof(uint32_t));
+	memcpy(mc->under, s->fb, SCREEN_W * SCREEN_H * sizeof(uint32_t));
 	emu_layers(s, 0x1F);
 	if (n > base) emu_hide_sprites(s, rules, base);
 	emu_state_load(s, mc->underState);
@@ -439,7 +439,7 @@ static void grab_under(MapCapture* mc, Emu* s) {
 static void crop(MapCapture* mc, const uint32_t* fb, uint32_t* out) {
 	const MapProfile* p = mc->prof;
 	for (int y = 0; y < mc->ch; ++y) {
-		memcpy(&out[y * mc->cw], &fb[(mc->cy + y) * GBA_W + mc->cx], mc->cw * sizeof(uint32_t));
+		memcpy(&out[y * mc->cw], &fb[(mc->cy + y) * SCREEN_W + mc->cx], mc->cw * sizeof(uint32_t));
 	}
 	if (mc->clean && mc->underValid) patch_under(mc, out);
 	if (mc->clean && p->glyphs[0].w) remove_glyphs(mc, out);
@@ -488,11 +488,11 @@ static long frame_luma(const uint32_t* px, size_t n) {
 static void place_rate(MapCapture* mc);
 
 static const char* do_capture_(MapCapture* mc, const void* state);
-/* A capture, timed for GBADS_DEBUG: how long, how many of the shadow
+/* A capture, timed for PSXDS_DEBUG: how long, how many of the shadow
  * core's frames */
 static const char* do_capture(MapCapture* mc, const void* state) {
 	static int dbg = -1;
-	if (dbg < 0) dbg = getenv("GBADS_DEBUG") != NULL;
+	if (dbg < 0) dbg = getenv("PSXDS_DEBUG") != NULL;
 	struct timespec t0, t1;
 	clock_gettime(CLOCK_MONOTONIC, &t0);
 	unsigned long f0 = mc->shadow.frames;
@@ -670,7 +670,7 @@ static bool grab_rate(MapCapture* mc, const void* state) {
 	for (int y = 0; y < h; ++y) {
 		for (int x = 0; x < w; ++x) {
 			mc->rateMask[y * w + x] = false;
-			if ((s->fb[(p->rate.y + y) * GBA_W + p->rate.x + x] & 0xFFFFFF) == text) ++count;
+			if ((s->fb[(p->rate.y + y) * SCREEN_W + p->rate.x + x] & 0xFFFFFF) == text) ++count;
 		}
 	}
 	if (count < 12) return false; /* the pause screen didn't come up */
@@ -683,7 +683,7 @@ static bool grab_rate(MapCapture* mc, const void* state) {
 				for (int dx = -1; dx <= 1; ++dx) {
 					int u = x - 1 + dx, v = y - 1 + dy;
 					if (u < 0 || v < 0 || u >= w || v >= h) continue;
-					bool t = (s->fb[(p->rate.y + v) * GBA_W + p->rate.x + u] & 0xFFFFFF) == text;
+					bool t = (s->fb[(p->rate.y + v) * SCREEN_W + p->rate.x + u] & 0xFFFFFF) == text;
 					if (t && !dx && !dy) isText = true;
 					if (t) nearText = true;
 				}
@@ -812,7 +812,7 @@ MapCapture* mapcap_create(const char* romPath, const char* gameCode, bool tight)
 	}
 	mc->prev = calloc(mc->cropPixels, sizeof(uint32_t));
 	if (mc->clean && p->underRect[0].x1) {
-		mc->under = calloc((size_t) GBA_W * GBA_H, sizeof(uint32_t));
+		mc->under = calloc((size_t) SCREEN_W * SCREEN_H, sizeof(uint32_t));
 		mc->underState = malloc(mc->stateSize);
 	}
 	mc->rateRef = calloc(mc->cropPixels, sizeof(uint32_t));
@@ -826,12 +826,12 @@ MapCapture* mapcap_create(const char* romPath, const char* gameCode, bool tight)
 	return mc;
 }
 
-/* GBADS_SYNC=1 (regression tests): captures run in mapcap_request, the
+/* PSXDS_SYNC=1 (regression tests): captures run in mapcap_request, the
  * game waiting for them, as in the web build, so every run gives the same
  * pictures at the same frames. */
 static void start_thread(MapCapture* mc) {
 	static int sync = -1;
-	if (sync < 0) sync = getenv("GBADS_SYNC") && atoi(getenv("GBADS_SYNC"));
+	if (sync < 0) sync = getenv("PSXDS_SYNC") && atoi(getenv("PSXDS_SYNC"));
 	if (sync) mc->noThread = true;
 	if (!mc->running && !mc->noThread) {
 		mc->running = true;
@@ -899,7 +899,7 @@ MapResult mapcap_capture_sync(MapCapture* mc, Emu* live) {
 
 #ifdef __wasi__
 /* The web player runs captures in a second copy of the app, in a worker of
- * its own (web/player/worker.js, started with GBADS_CAPTURE_SERVE): the
+ * its own (web/player/worker.js, started with PSXDS_CAPTURE_SERVE): the
  * game here goes on while it works, as it does beside a capture thread on a
  * device. Without the page asking for that (State Saver's tab), captures
  * run in mapcap_request, the game waiting for them. Live side: a request
@@ -1004,7 +1004,7 @@ __attribute__((export_name("web_serve_result"))) uint32_t web_serve_result(uint3
 	return j;
 }
 
-/* The capture worker's whole run (main, with GBADS_CAPTURE_SERVE=CODE): the
+/* The capture worker's whole run (main, with PSXDS_CAPTURE_SERVE=CODE): the
  * game's capture set up, then jobs as they come, between short sleeps. */
 int mapcap_web_serve(const char* romPath, const char* code, bool tight) {
 	serveMc = mapcap_create(romPath, code, tight);
@@ -1028,11 +1028,11 @@ int mapcap_web_serve(const char* romPath, const char* code, bool tight) {
 
 bool mapcap_request(MapCapture* mc, Emu* live) {
 #ifdef __wasi__
-	/* (the page asks for it from the start with GBADS_CAPTURE_OFFLOAD=1: a game
+	/* (the page asks for it from the start with PSXDS_CAPTURE_OFFLOAD=1: a game
 	 * can want its first capture before its first frame) */
 	static bool envRead;
 	if (!envRead) {
-		const char* o = getenv("GBADS_CAPTURE_OFFLOAD");
+		const char* o = getenv("PSXDS_CAPTURE_OFFLOAD");
 		envRead = true;
 		if (o && *o == '1') webOffload = true;
 	}

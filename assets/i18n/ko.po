@@ -1,13 +1,13 @@
-# GBA DS: Korean (machine translation, not yet reviewed).
+# PSX-DS: Korean (machine translation, not yet reviewed).
 msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Language: ko\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
-"X-GBADS-Autonym: 한국어\n"
-"X-GBADS-Script: ko\n"
-"X-GBADS-Status: machine\n"
-"X-GBADS-Locales: ko_KR ko\n"
+"X-PSXDS-Autonym: 한국어\n"
+"X-PSXDS-Script: ko\n"
+"X-PSXDS-Status: machine\n"
+"X-PSXDS-Locales: ko_KR ko\n"
 
 msgid " (patch)"
 msgstr " (패치)"
@@ -45,8 +45,8 @@ msgstr[0] "게임 %d개 발견."
 msgid "%d of %d"
 msgstr "%d / %d"
 
-msgid "%d of %d set for %s, kept in controllers.txt beside GBA DS's save states. The line for it is in gba-ds.log too: send it in to have it built into GBA DS for this device."
-msgstr "%3$s에 %2$d개 중 %1$d개를 설정했습니다. GBA DS 상태 파일 옆의 controllers.txt에 저장됩니다. 해당 줄은 gba-ds.log에도 있으니, 이 기기용으로 GBA DS에 반영할 수 있게 보내 주세요."
+msgid "%d of %d set for %s, kept in controllers.txt beside PSX-DS's save states. The line for it is in psx-ds.log too: send it in to have it built into PSX-DS for this device."
+msgstr "%3$s에 %2$d개 중 %1$d개를 설정했습니다. PSX-DS 상태 파일 옆의 controllers.txt에 저장됩니다. 해당 줄은 psx-ds.log에도 있으니, 이 기기용으로 PSX-DS에 반영할 수 있게 보내 주세요."
 
 msgid "%d on"
 msgstr "%d개 켜짐"
@@ -151,8 +151,8 @@ msgstr "각 픽셀 줄 아래에 어두운 선"
 msgid "A game's save already next to it, or in the other type, is copied over the first time you play it. .srm is the type RetroArch uses: choose its saves folder too to share each game's save with it."
 msgstr "옆에 이미 있거나 다른 형식인 게임 저장 데이터는 처음 플레이할 때 복사됩니다. .srm은 RetroArch가 쓰는 형식입니다. RetroArch의 저장 폴더도 선택하면 각 게임의 저장 데이터를 공유할 수 있습니다."
 
-msgid "A new version of GBA DS"
-msgstr "GBA DS 새 버전"
+msgid "A new version of PSX-DS"
+msgstr "PSX-DS 새 버전"
 
 msgid "A pattern over every pixel, on both screens."
 msgstr "모든 픽셀 위에 패턴을 입힙니다 (두 화면 모두)."
@@ -169,8 +169,8 @@ msgstr "업적"
 msgid "Add a note (optional): what happened, and what you expected to happen."
 msgstr "메모를 추가하세요 (선택): 무슨 일이 있었고 어떻게 되길 기대했는지."
 
-msgid "Adds GBA DS to the emulators for Game Boy Advance games in EmulationStation. Pick it for one game (its Advanced Game Options > Emulator) or for all of them (the system's advanced settings). The other emulators keep working as before."
-msgstr "EmulationStation의 게임보이 어드밴스 에뮬레이터에 GBA DS를 추가합니다. 게임 하나(고급 게임 옵션 > 에뮬레이터)나 전체(시스템 고급 설정)에 선택할 수 있습니다. 다른 에뮬레이터는 그대로 작동합니다."
+msgid "Adds PSX-DS to the emulators for PlayStation games in EmulationStation. Pick it for one game (its Advanced Game Options > Emulator) or for all of them (the system's advanced settings). The other emulators keep working as before."
+msgstr "EmulationStation의 게임보이 어드밴스 에뮬레이터에 PSX-DS를 추가합니다. 게임 하나(고급 게임 옵션 > 에뮬레이터)나 전체(시스템 고급 설정)에 선택할 수 있습니다. 다른 에뮬레이터는 그대로 작동합니다."
 
 msgid "All"
 msgstr "모두"
@@ -199,8 +199,8 @@ msgstr "항상 켜짐, 가장 먼저 적용 (RetroArch 방식: ROM과 같은 이
 msgid "AM"
 msgstr "AM"
 
-msgid "An xdelta made with compression, which GBA DS can't read: patch the ROM with it beforehand, or make it again without (xdelta3 -S none)"
-msgstr "압축으로 만든 xdelta는 GBA DS에서 읽을 수 없습니다. 먼저 ROM에 패치를 적용하거나 압축 없이 다시 만드세요 (xdelta3 -S none)"
+msgid "An xdelta made with compression, which PSX-DS can't read: patch the ROM with it beforehand, or make it again without (xdelta3 -S none)"
+msgstr "압축으로 만든 xdelta는 PSX-DS에서 읽을 수 없습니다. 먼저 ROM에 패치를 적용하거나 압축 없이 다시 만드세요 (xdelta3 -S none)"
 
 msgid "Android's installer couldn't be reached"
 msgstr "Android 설치 프로그램에 연결할 수 없습니다"
@@ -283,7 +283,7 @@ msgstr "다시 온라인"
 msgid "Back to %s and the buttons it started with"
 msgstr "%s 및 처음 버튼으로 되돌리기"
 
-msgid "BananaOS's systems list has no Game Boy Advance entry."
+msgid "BananaOS's systems list has no PlayStation entry."
 msgstr "BananaOS 시스템 목록에 게임보이 어드밴스 항목이 없습니다."
 
 msgid "Bezel logo"
@@ -325,11 +325,11 @@ msgstr "읽을 수 없음"
 msgid "Can't be read: not a patch, or damaged"
 msgstr "읽을 수 없음: 패치가 아니거나 손상됨"
 
-msgid "Can't find the GBA DS folder."
-msgstr "GBA DS 폴더를 찾을 수 없습니다."
+msgid "Can't find the PSX-DS folder."
+msgstr "PSX-DS 폴더를 찾을 수 없습니다."
 
-msgid "Can't reach GBA DS's folder, using %s for now: %s"
-msgstr "GBA DS 폴더에 접근할 수 없어 당분간 %s을(를) 사용합니다: %s"
+msgid "Can't reach PSX-DS's folder, using %s for now: %s"
+msgstr "PSX-DS 폴더에 접근할 수 없어 당분간 %s을(를) 사용합니다: %s"
 
 msgid "Can't rewind further"
 msgstr "더 이상 되감을 수 없습니다"
@@ -355,8 +355,8 @@ msgstr "치트"
 msgid "Check now"
 msgstr "지금 확인"
 
-msgid "Check ra_username and ra_password in gba-ds.cfg"
-msgstr "gba-ds.cfg의 ra_username과 ra_password를 확인하세요"
+msgid "Check ra_username and ra_password in psx-ds.cfg"
+msgstr "psx-ds.cfg의 ra_username과 ra_password를 확인하세요"
 
 msgid "Check the account in EmulationStation's RetroAchievements settings"
 msgstr "EmulationStation의 RetroAchievements 설정에서 계정을 확인하세요"
@@ -364,8 +364,8 @@ msgstr "EmulationStation의 RetroAchievements 설정에서 계정을 확인하�
 msgid "Choose a folder in Android's file picker..."
 msgstr "Android 파일 선택기에서 폴더를 선택하세요..."
 
-msgid "Choose GBA DS folder"
-msgstr "GBA DS 폴더 선택"
+msgid "Choose PSX-DS folder"
+msgstr "PSX-DS 폴더 선택"
 
 msgid "Choose it again to close %s: %s"
 msgstr "%s을(를) 닫으려면 다시 선택하세요: %s"
@@ -379,8 +379,8 @@ msgstr "ROM 폴더 선택"
 msgid "Choose save folder"
 msgstr "저장 폴더 선택"
 
-msgid "Chosen folder is inside GBA DS's own, files not moved: %s"
-msgstr "선택한 폴더가 GBA DS 자체 폴더 안에 있어 파일을 옮기지 않았습니다: %s"
+msgid "Chosen folder is inside PSX-DS's own, files not moved: %s"
+msgstr "선택한 폴더가 PSX-DS 자체 폴더 안에 있어 파일을 옮기지 않았습니다: %s"
 
 msgid "Chosen folder not found, files not moved: %s"
 msgstr "선택한 폴더를 찾을 수 없어 파일을 옮기지 않았습니다: %s"
@@ -391,8 +391,8 @@ msgstr "여기서 선택됨:"
 msgid "Close Game"
 msgstr "게임 닫기"
 
-msgid "Close GBA DS"
-msgstr "GBA DS 닫기"
+msgid "Close PSX-DS"
+msgstr "PSX-DS 닫기"
 
 msgid "Closest to gap"
 msgstr "틈에 가깝게"
@@ -415,11 +415,11 @@ msgstr "색 보정: 끔"
 msgid "Color Correction: On"
 msgstr "색 보정: 켬"
 
-msgid "Colors as a Game Boy Advance's screen showed them."
+msgid "Colors as a handheld's LCD screen would show them."
 msgstr "게임보이 어드밴스 화면이 보여 주던 색상입니다."
 
-msgid "Confirm the update to v%s in Android's installer. Android closes GBA DS while it installs; open it again afterwards. If Android asks first, allow GBA DS to install apps."
-msgstr "Android 설치 프로그램에서 v%s 업데이트를 확인하세요. 설치하는 동안 Android가 GBA DS를 종료합니다. 끝나면 다시 여세요. Android가 먼저 묻는다면 GBA DS의 앱 설치를 허용하세요."
+msgid "Confirm the update to v%s in Android's installer. Android closes PSX-DS while it installs; open it again afterwards. If Android asks first, allow PSX-DS to install apps."
+msgstr "Android 설치 프로그램에서 v%s 업데이트를 확인하세요. 설치하는 동안 Android가 PSX-DS를 종료합니다. 끝나면 다시 여세요. Android가 먼저 묻는다면 PSX-DS의 앱 설치를 허용하세요."
 
 msgid "Connect a controller and try again."
 msgstr "컨트롤러를 연결한 뒤 다시 시도하세요."
@@ -430,14 +430,14 @@ msgstr "조작"
 msgid "Couldn't change %s."
 msgstr "%s을(를) 변경할 수 없었습니다."
 
-msgid "Couldn't change the files in %s/custom_systems: allow GBA DS All files access in Android's settings."
-msgstr "%s/custom_systems의 파일을 변경할 수 없었습니다. Android 설정에서 GBA DS에 모든 파일 접근 권한을 허용하세요."
+msgid "Couldn't change the files in %s/custom_systems: allow PSX-DS All files access in Android's settings."
+msgstr "%s/custom_systems의 파일을 변경할 수 없었습니다. Android 설정에서 PSX-DS에 모든 파일 접근 권한을 허용하세요."
 
 msgid "Couldn't connect"
 msgstr "연결할 수 없었습니다"
 
-msgid "Couldn't find GBA DS's folder."
-msgstr "GBA DS 폴더를 찾을 수 없었습니다."
+msgid "Couldn't find PSX-DS's folder."
+msgstr "PSX-DS 폴더를 찾을 수 없었습니다."
 
 msgid "Couldn't keep that choice."
 msgstr "그 선택을 유지할 수 없었습니다."
@@ -448,8 +448,8 @@ msgstr "업적을 불러올 수 없었습니다"
 msgid "Couldn't load the game"
 msgstr "게임을 불러올 수 없었습니다"
 
-msgid "Couldn't move GBA DS's files, they stay in %s"
-msgstr "GBA DS 파일을 옮길 수 없어 %s에 남아 있습니다"
+msgid "Couldn't move PSX-DS's files, they stay in %s"
+msgstr "PSX-DS 파일을 옮길 수 없어 %s에 남아 있습니다"
 
 msgid "Couldn't open the file picker."
 msgstr "파일 선택기를 열 수 없었습니다."
@@ -547,8 +547,8 @@ msgstr "다운로드 중"
 msgid "Each pixel a little darker toward its edges"
 msgstr "가장자리로 갈수록 각 픽셀이 약간 어두워짐"
 
-msgid "Earn achievements in casual mode with your retroachievements.org account. GBA DS keeps a sign-in token, not your password."
-msgstr "retroachievements.org 계정으로 캐주얼 모드에서 업적을 달성하세요. GBA DS는 비밀번호가 아닌 로그인 토큰을 보관합니다."
+msgid "Earn achievements in casual mode with your retroachievements.org account. PSX-DS keeps a sign-in token, not your password."
+msgstr "retroachievements.org 계정으로 캐주얼 모드에서 업적을 달성하세요. PSX-DS는 비밀번호가 아닌 로그인 토큰을 보관합니다."
 
 msgid "English"
 msgstr "English"
@@ -664,8 +664,8 @@ msgstr "게임은 %s에서 읽어 옵니다 (하위 폴더 포함). 저장 데�
 msgid "Games are read from %s (subfolders too). Saves (%s) are kept next to the games."
 msgstr "게임은 %s에서 읽어 옵니다 (하위 폴더 포함). 저장 데이터(%s)는 게임 옆에 보관됩니다."
 
-msgid "Games picked in BananaOS's own Game Boy Advance list start in GBA DS when it has second-screen support for them. Restart BananaOS after switching this."
-msgstr "BananaOS 자체 게임보이 어드밴스 목록에서 고른 게임은, GBA DS가 해당 게임의 두 번째 화면을 지원하면 GBA DS에서 시작됩니다. 이것을 바꾼 뒤에는 BananaOS를 다시 시작하세요."
+msgid "Games picked in BananaOS's own PlayStation list start in PSX-DS when it has second-screen support for them. Restart BananaOS after switching this."
+msgstr "BananaOS 자체 게임보이 어드밴스 목록에서 고른 게임은, PSX-DS가 해당 게임의 두 번째 화면을 지원하면 PSX-DS에서 시작됩니다. 이것을 바꾼 뒤에는 BananaOS를 다시 시작하세요."
 
 msgid "Games shown"
 msgstr "표시할 게임"
@@ -673,92 +673,92 @@ msgstr "표시할 게임"
 msgid "Games without second-screen support play on one screen."
 msgstr "두 번째 화면을 지원하지 않는 게임은 한 화면으로 실행됩니다."
 
-msgid "GBA"
-msgstr "GBA"
+msgid "PS1"
+msgstr "PS1"
 
-msgid "GBA A"
-msgstr "GBA A"
+msgid "PS1 Circle"
+msgstr "PS1 Circle"
 
-msgid "GBA A on the right button, or on the bottom one."
-msgstr "GBA A를 오른쪽 버튼에 또는 아래쪽 버튼에."
+msgid "PS1 Circle on the right button, or on the bottom one."
+msgstr "PS1 A를 오른쪽 버튼에 또는 아래쪽 버튼에."
 
-msgid "GBA B"
-msgstr "GBA B"
+msgid "PS1 Cross"
+msgstr "PS1 Cross"
 
-msgid "GBA Down"
-msgstr "GBA 아래"
+msgid "PS1 Down"
+msgstr "PS1 아래"
 
-msgid "GBA DS can't save files there: allow it All files access in Android's settings, or choose another folder."
-msgstr "GBA DS가 그곳에 파일을 저장할 수 없습니다. Android 설정에서 모든 파일 접근을 허용하거나 다른 폴더를 선택하세요."
+msgid "PSX-DS can't save files there: allow it All files access in Android's settings, or choose another folder."
+msgstr "PSX-DS가 그곳에 파일을 저장할 수 없습니다. Android 설정에서 모든 파일 접근을 허용하거나 다른 폴더를 선택하세요."
 
-msgid "GBA DS in BananaOS's GBA list: Off"
-msgstr "BananaOS GBA 목록의 GBA DS: 끔"
+msgid "PSX-DS in BananaOS's PS1 list: Off"
+msgstr "BananaOS PS1 목록의 PSX-DS: 끔"
 
-msgid "GBA DS in BananaOS's GBA list: On"
-msgstr "BananaOS GBA 목록의 GBA DS: 켬"
+msgid "PSX-DS in BananaOS's PS1 list: On"
+msgstr "BananaOS PS1 목록의 PSX-DS: 켬"
 
-msgid "GBA DS in EmulationStation: Off"
-msgstr "EmulationStation의 GBA DS: 끔"
+msgid "PSX-DS in EmulationStation: Off"
+msgstr "EmulationStation의 PSX-DS: 끔"
 
-msgid "GBA DS in EmulationStation: On"
-msgstr "EmulationStation의 GBA DS: 켬"
+msgid "PSX-DS in EmulationStation: On"
+msgstr "EmulationStation의 PSX-DS: 켬"
 
-msgid "GBA DS in ES-DE: Off"
-msgstr "ES-DE의 GBA DS: 끔"
+msgid "PSX-DS in ES-DE: Off"
+msgstr "ES-DE의 PSX-DS: 끔"
 
-msgid "GBA DS in ES-DE: On"
-msgstr "ES-DE의 GBA DS: 켬"
+msgid "PSX-DS in ES-DE: On"
+msgstr "ES-DE의 PSX-DS: 켬"
 
-msgid "GBA DS is now ES-DE's emulator for Game Boy Advance games. Quit ES-DE and open it again to see it."
-msgstr "이제 GBA DS가 ES-DE의 게임보이 어드밴스 에뮬레이터입니다. 확인하려면 ES-DE를 종료한 뒤 다시 여세요."
+msgid "PSX-DS is now ES-DE's emulator for PlayStation games. Quit ES-DE and open it again to see it."
+msgstr "이제 PSX-DS가 ES-DE의 게임보이 어드밴스 에뮬레이터입니다. 확인하려면 ES-DE를 종료한 뒤 다시 여세요."
 
-msgid "GBA DS is out of ES-DE's emulator list. Quit ES-DE and open it again to see it."
-msgstr "GBA DS가 ES-DE의 에뮬레이터 목록에서 빠졌습니다. 확인하려면 ES-DE를 종료한 뒤 다시 여세요."
+msgid "PSX-DS is out of ES-DE's emulator list. Quit ES-DE and open it again to see it."
+msgstr "PSX-DS가 ES-DE의 에뮬레이터 목록에서 빠졌습니다. 확인하려면 ES-DE를 종료한 뒤 다시 여세요."
 
-msgid "GBA DS Logo: Hide"
-msgstr "GBA DS 로고: 숨김"
+msgid "PSX-DS Logo: Hide"
+msgstr "PSX-DS 로고: 숨김"
 
-msgid "GBA DS Logo: Show"
-msgstr "GBA DS 로고: 표시"
+msgid "PSX-DS Logo: Show"
+msgstr "PSX-DS 로고: 표시"
 
-msgid "GBA DS Settings"
-msgstr "GBA DS 설정"
+msgid "PSX-DS Settings"
+msgstr "PSX-DS 설정"
 
-msgid "GBA DS v%s is out (this is v%s). Update now to download it (%.1f MB) and install it: Android asks you to confirm. Your games, saves, states and settings are kept."
-msgstr "GBA DS v%s이(가) 나왔습니다 (현재 v%s). 지금 업데이트를 누르면 다운로드(%.1f MB)하여 설치합니다. Android가 확인을 요청합니다. 게임, 저장 데이터, 상태, 설정은 유지됩니다."
+msgid "PSX-DS v%s is out (this is v%s). Update now to download it (%.1f MB) and install it: Android asks you to confirm. Your games, saves, states and settings are kept."
+msgstr "PSX-DS v%s이(가) 나왔습니다 (현재 v%s). 지금 업데이트를 누르면 다운로드(%.1f MB)하여 설치합니다. Android가 확인을 요청합니다. 게임, 저장 데이터, 상태, 설정은 유지됩니다."
 
-msgid "GBA DS v%s is out (this is v%s). Update now to download it (%.1f MB) and restart into it; your games, saves, states and settings are kept."
-msgstr "GBA DS v%s이(가) 나왔습니다 (현재 v%s). 지금 업데이트를 누르면 다운로드(%.1f MB)한 뒤 다시 시작합니다. 게임, 저장 데이터, 상태, 설정은 유지됩니다."
+msgid "PSX-DS v%s is out (this is v%s). Update now to download it (%.1f MB) and restart into it; your games, saves, states and settings are kept."
+msgstr "PSX-DS v%s이(가) 나왔습니다 (현재 v%s). 지금 업데이트를 누르면 다운로드(%.1f MB)한 뒤 다시 시작합니다. 게임, 저장 데이터, 상태, 설정은 유지됩니다."
 
-msgid "GBA DS's bezel, or your own PNGs, round the picture."
-msgstr "GBA DS 베젤 또는 직접 만든 PNG를 화면 주위에 표시합니다."
+msgid "PSX-DS's bezel, or your own PNGs, round the picture."
+msgstr "PSX-DS 베젤 또는 직접 만든 PNG를 화면 주위에 표시합니다."
 
-msgid "GBA DS's files are kept there already."
-msgstr "GBA DS 파일은 이미 그곳에 있습니다."
+msgid "PSX-DS's files are kept there already."
+msgstr "PSX-DS 파일은 이미 그곳에 있습니다."
 
-msgid "GBA DS's files go to %s the next time it starts: close GBA DS and open it again."
-msgstr "GBA DS 파일은 다음 시작 때 %s(으)로 이동합니다. GBA DS를 닫고 다시 여세요."
+msgid "PSX-DS's files go to %s the next time it starts: close PSX-DS and open it again."
+msgstr "PSX-DS 파일은 다음 시작 때 %s(으)로 이동합니다. PSX-DS를 닫고 다시 여세요."
 
-msgid "GBA DS's own files (states, settings, cheats, overlays) are in %s, moving to %s at the next start."
-msgstr "GBA DS 자체 파일(상태, 설정, 치트, 오버레이)은 %s에 있으며, 다음 시작 때 %s(으)로 이동합니다."
+msgid "PSX-DS's own files (states, settings, cheats, overlays) are in %s, moving to %s at the next start."
+msgstr "PSX-DS 자체 파일(상태, 설정, 치트, 오버레이)은 %s에 있으며, 다음 시작 때 %s(으)로 이동합니다."
 
-msgid "GBA DS's own files (states, settings, cheats, overlays) are in %s."
-msgstr "GBA DS 자체 파일(상태, 설정, 치트, 오버레이)은 %s에 있습니다."
+msgid "PSX-DS's own files (states, settings, cheats, overlays) are in %s."
+msgstr "PSX-DS 자체 파일(상태, 설정, 치트, 오버레이)은 %s에 있습니다."
 
-msgid "GBA L"
-msgstr "GBA L"
+msgid "PS1 L1"
+msgstr "PS1 L1"
 
-msgid "GBA Left"
-msgstr "GBA 왼쪽"
+msgid "PS1 Left"
+msgstr "PS1 왼쪽"
 
-msgid "GBA R"
-msgstr "GBA R"
+msgid "PS1 R1"
+msgstr "PS1 R1"
 
-msgid "GBA Right"
-msgstr "GBA 오른쪽"
+msgid "PS1 Right"
+msgstr "PS1 오른쪽"
 
-msgid "GBA Up"
-msgstr "GBA 위"
+msgid "PS1 Up"
+msgstr "PS1 위"
 
 msgid "Generated"
 msgstr "생성됨"
@@ -913,11 +913,11 @@ msgstr "밝음"
 msgid "Light/dark mode"
 msgstr "밝은/어두운 모드"
 
-msgid "Like a GBA"
+msgid "Like an LCD"
 msgstr "GBA처럼"
 
-msgid "Lines between the pixels, like a GBA's screen"
-msgstr "GBA 화면처럼 픽셀 사이에 선"
+msgid "Lines between the pixels, like an LCD screen"
+msgstr "PS1 화면처럼 픽셀 사이에 선"
 
 msgid "Load failed"
 msgstr "불러오기 실패"
@@ -946,8 +946,8 @@ msgstr "기계 번역"
 msgid "Made for another version of the game: it can't be switched on for this ROM"
 msgstr "게임의 다른 버전용으로 만들어져 이 ROM에서는 켤 수 없습니다"
 
-msgid "Makes GBA DS the emulator for Game Boy Advance games in ES-DE. For a game it doesn't support, choose another in ES-DE (the game's metadata > Alternative emulator)."
-msgstr "ES-DE에서 GBA DS를 게임보이 어드밴스 게임용 에뮬레이터로 만듭니다. 지원하지 않는 게임은 ES-DE에서 다른 것을 선택하세요 (게임 메타데이터 > 대체 에뮬레이터)."
+msgid "Makes PSX-DS the emulator for PlayStation games in ES-DE. For a game it doesn't support, choose another in ES-DE (the game's metadata > Alternative emulator)."
+msgstr "ES-DE에서 PSX-DS를 게임보이 어드밴스 게임용 에뮬레이터로 만듭니다. 지원하지 않는 게임은 ES-DE에서 다른 것을 선택하세요 (게임 메타데이터 > 대체 에뮬레이터)."
 
 msgid "Map"
 msgstr "지도"
@@ -1006,7 +1006,7 @@ msgstr "이동"
 msgid "Moving it: Up / Down or tap where it goes, then A (or tap it again). The one lower in the list is applied later"
 msgstr "이동 중: 위 / 아래 또는 갈 위치를 누른 뒤 A (또는 다시 누르기). 목록에서 아래에 있는 것이 나중에 적용됩니다"
 
-msgid "Moving things leave a short trail, as on a GBA."
+msgid "Moving things leave a short trail, as on an LCD."
 msgstr "움직이는 것이 GBA처럼 짧은 잔상을 남깁니다."
 
 msgid "New"
@@ -1057,8 +1057,8 @@ msgstr "없음"
 msgid "Not in the folder any more: it's left out"
 msgstr "더 이상 폴더에 없음: 제외됩니다"
 
-msgid "Not resumed: RetroArch's automatic state is from another of its GBA cores. To share states, set RetroArch's GBA core to mGBA."
-msgstr "이어하지 않음: RetroArch의 자동 상태는 RetroArch의 다른 GBA 코어에서 온 것입니다. 상태를 공유하려면 RetroArch의 GBA 코어를 mGBA로 설정하세요."
+msgid "Not resumed: RetroArch's automatic state is from another of its PlayStation cores. To share states, set RetroArch's PlayStation core to SwanStation."
+msgstr "이어하지 않음: RetroArch의 자동 상태는 RetroArch의 다른 PS1 코어에서 온 것입니다. 상태를 공유하려면 RetroArch의 PS1 코어를 SwanStation로 설정하세요."
 
 msgid "Not used"
 msgstr "사용 안 함"
@@ -1093,8 +1093,8 @@ msgstr "끔"
 msgid "off"
 msgstr "꺼짐"
 
-msgid "Off for slower devices: the table on one screen. Close and restart GBA DS to apply."
-msgstr "느린 기기용으로 꺼짐: 테이블을 한 화면에. 적용하려면 GBA DS를 닫고 다시 시작하세요."
+msgid "Off for slower devices: the table on one screen. Close and restart PSX-DS to apply."
+msgstr "느린 기기용으로 꺼짐: 테이블을 한 화면에. 적용하려면 PSX-DS를 닫고 다시 시작하세요."
 
 msgid "Off while a patch is on"
 msgstr "패치가 켜져 있는 동안 꺼짐"
@@ -1108,8 +1108,8 @@ msgstr "아니요. 메뉴에 반영하려면 BananaOS(설정 > 시스템)를 다
 msgid "Off. Restart EmulationStation to apply."
 msgstr "아니요. 적용하려면 EmulationStation을 다시 시작하세요."
 
-msgid "Off: every game plays like an ordinary GBA game."
-msgstr "아니요: 모든 게임이 일반 GBA 게임처럼 실행됩니다."
+msgid "Off: every game plays like an ordinary PS1 game."
+msgstr "아니요: 모든 게임이 일반 PS1 게임처럼 실행됩니다."
 
 msgid "Off: the left stick does nothing in games."
 msgstr "아니요: 왼쪽 스틱은 게임에서 아무 일도 하지 않습니다."
@@ -1318,8 +1318,8 @@ msgstr "빨강"
 msgid "Red, green and blue stripes, gentle: for dim screens"
 msgstr "빨강, 초록, 파랑 줄무늬, 부드럽게: 어두운 화면용"
 
-msgid "Red, green and blue stripes, like a GBA's screen"
-msgstr "GBA 화면처럼 빨강, 초록, 파랑 줄무늬"
+msgid "Red, green and blue stripes, like an LCD screen"
+msgstr "PS1 화면처럼 빨강, 초록, 파랑 줄무늬"
 
 msgid "Red, green and blue stripes, strong: for bright screens"
 msgstr "빨강, 초록, 파랑 줄무늬, 강하게: 밝은 화면용"
@@ -1381,8 +1381,8 @@ msgstr "RetroAchievements: 로그인하는 중..."
 msgid "RetroArch's settings weren't found here: choose the folder where it keeps its save states."
 msgstr "여기서 RetroArch 설정을 찾을 수 없습니다. RetroArch가 상태를 보관하는 폴더를 선택하세요."
 
-msgid "RetroArch's settings weren't found, so slots 0-9 and the automatic state are GBA DS's own again."
-msgstr "RetroArch 설정을 찾을 수 없어 슬롯 0-9와 자동 상태가 다시 GBA DS 자체 것이 됩니다."
+msgid "RetroArch's settings weren't found, so slots 0-9 and the automatic state are PSX-DS's own again."
+msgstr "RetroArch 설정을 찾을 수 없어 슬롯 0-9와 자동 상태가 다시 PSX-DS 자체 것이 됩니다."
 
 msgid "RetroArch's State Folder"
 msgstr "RetroArch 상태 폴더"
@@ -1459,8 +1459,8 @@ msgstr "상태 저장"
 msgid "Save State %d"
 msgstr "상태 %d 저장"
 
-msgid "Save States: GBA DS's Own"
-msgstr "상태: GBA DS 자체"
+msgid "Save States: PSX-DS's Own"
+msgstr "상태: PSX-DS 자체"
 
 msgid "Save States: Shared with RetroArch"
 msgstr "상태: RetroArch와 공유"
@@ -1642,23 +1642,23 @@ msgstr "슬롯 %1$d: %4$d년 %2$s %3$d일 %6$s %4$d:%5$02d%7$s"
 msgid "Slot %d: Empty"
 msgstr "슬롯 %d: 비어 있음"
 
-msgid "Slots 0-9 and the automatic state are GBA DS's own again. The states saved in RetroArch's folder stay there."
-msgstr "슬롯 0-9와 자동 상태가 다시 GBA DS 자체 것이 됩니다. RetroArch 폴더에 저장된 상태는 그곳에 남습니다."
+msgid "Slots 0-9 and the automatic state are PSX-DS's own again. The states saved in RetroArch's folder stay there."
+msgstr "슬롯 0-9와 자동 상태가 다시 PSX-DS 자체 것이 됩니다. RetroArch 폴더에 저장된 상태는 그곳에 남습니다."
 
-msgid "Slots 0-9 and the automatic state are now RetroArch's. GBA DS's own states stay in its folder, for when this is switched back."
-msgstr "슬롯 0-9와 자동 상태가 이제 RetroArch 것입니다. GBA DS 자체 상태는 이것을 되돌릴 때를 위해 GBA DS 폴더에 남습니다."
+msgid "Slots 0-9 and the automatic state are now RetroArch's. PSX-DS's own states stay in its folder, for when this is switched back."
+msgstr "슬롯 0-9와 자동 상태가 이제 RetroArch 것입니다. PSX-DS 자체 상태는 이것을 되돌릴 때를 위해 PSX-DS 폴더에 남습니다."
 
 msgid "Slots 0-9 and the automatic state are now shared with RetroArch, in %s."
 msgstr "슬롯 0-9와 자동 상태는 이제 %s에서 RetroArch와 공유됩니다."
 
-msgid "Slots 0-9 and the resume point are GBA DS's own. Shared, they're RetroArch's: %s."
-msgstr "슬롯 0-9와 이어하기 지점은 GBA DS 자체 것입니다. 공유하면 RetroArch 것이 됩니다: %s."
+msgid "Slots 0-9 and the resume point are PSX-DS's own. Shared, they're RetroArch's: %s."
+msgstr "슬롯 0-9와 이어하기 지점은 PSX-DS 자체 것입니다. 공유하면 RetroArch 것이 됩니다: %s."
 
-msgid "Slots 0-9 and the resume point are GBA DS's own. To share them, choose RetroArch's state folder."
-msgstr "슬롯 0-9와 이어하기 지점은 GBA DS 자체 것입니다. 공유하려면 RetroArch의 상태 폴더를 선택하세요."
+msgid "Slots 0-9 and the resume point are PSX-DS's own. To share them, choose RetroArch's state folder."
+msgstr "슬롯 0-9와 이어하기 지점은 PSX-DS 자체 것입니다. 공유하려면 RetroArch의 상태 폴더를 선택하세요."
 
-msgid "Slots 0-9 and the resume point are RetroArch's (its GBA core set to mGBA): %s."
-msgstr "슬롯 0-9와 이어하기 지점은 RetroArch 것입니다 (RetroArch의 GBA 코어를 mGBA로 설정): %s."
+msgid "Slots 0-9 and the resume point are RetroArch's (its PlayStation core set to SwanStation): %s."
+msgstr "슬롯 0-9와 이어하기 지점은 RetroArch 것입니다 (RetroArch의 PS1 코어를 SwanStation로 설정): %s."
 
 msgid "Slow (10 a second)"
 msgstr "느림 (초당 10회)"
@@ -1744,8 +1744,8 @@ msgstr "바뀜"
 msgid "Swipe up for quick menu"
 msgstr "위로 스와이프하여 빠른 메뉴"
 
-msgid "Switched off in gba-ds.cfg (retroachievements = 0)."
-msgstr "gba-ds.cfg에서 꺼져 있습니다 (retroachievements = 0)."
+msgid "Switched off in psx-ds.cfg (retroachievements = 0)."
+msgstr "psx-ds.cfg에서 꺼져 있습니다 (retroachievements = 0)."
 
 msgid "System"
 msgstr "시스템"
@@ -1756,11 +1756,11 @@ msgstr "ROM 파일 이름의 태그, 예: (USA) 또는 (En,Fr,De)."
 msgid "Take Screenshot"
 msgstr "스크린샷 찍기"
 
-msgid "Takes effect after you close and restart GBA DS"
-msgstr "GBA DS를 닫고 다시 시작한 뒤에 적용됩니다"
+msgid "Takes effect after you close and restart PSX-DS"
+msgstr "PSX-DS를 닫고 다시 시작한 뒤에 적용됩니다"
 
-msgid "Tap again to close GBA DS."
-msgstr "GBA DS를 닫으려면 다시 탭하세요."
+msgid "Tap again to close PSX-DS."
+msgstr "PSX-DS를 닫으려면 다시 탭하세요."
 
 msgid "Tap the screen or press HOME for the menu"
 msgstr "메뉴는 화면을 탭하거나 HOME을 누르세요"
@@ -1786,8 +1786,8 @@ msgstr "이것은 키보드 키로 전달되므로 매핑할 수 없습니다. �
 msgid "That one is already %s. Press another, or tap to skip."
 msgstr "이것은 이미 %s입니다. 다른 것을 누르거나 탭하여 건너뛰세요."
 
-msgid "That's inside GBA DS's own folder: choose one outside it."
-msgstr "이곳은 GBA DS 폴더 안입니다: 그 밖의 폴더를 선택하세요."
+msgid "That's inside PSX-DS's own folder: choose one outside it."
+msgstr "이곳은 PSX-DS 폴더 안입니다: 그 밖의 폴더를 선택하세요."
 
 msgid "That's the hotkey button: press another"
 msgstr "그것은 핫키 버튼입니다: 다른 것을 누르세요"
@@ -1795,8 +1795,8 @@ msgstr "그것은 핫키 버튼입니다: 다른 것을 누르세요"
 msgid "the bottom face button"
 msgstr "아래 버튼"
 
-msgid "the button that opens GBA DS's menu (Home, Menu or Function)"
-msgstr "GBA DS 메뉴를 여는 버튼 (Home, Menu 또는 Function)"
+msgid "the button that opens PSX-DS's menu (Home, Menu or Function)"
+msgstr "PSX-DS 메뉴를 여는 버튼 (Home, Menu 또는 Function)"
 
 msgid "the game"
 msgstr "게임"
@@ -1804,8 +1804,8 @@ msgstr "게임"
 msgid "The game's pixels as they are"
 msgstr "게임의 픽셀을 있는 그대로"
 
-msgid "The GBA DS logo in the generated bezel."
-msgstr "생성된 베젤의 GBA DS 로고."
+msgid "The PSX-DS logo in the generated bezel."
+msgstr "생성된 베젤의 PSX-DS 로고."
 
 msgid "The hotkey button can be %s, Select, Start or L3"
 msgstr "핫키 버튼은 %s, Select, Start 또는 L3일 수 있습니다"
@@ -1831,8 +1831,8 @@ msgstr "ROM 옆의 패치"
 msgid "The patches aren't as the game started: restart it to play with them (or they're used from the next start)"
 msgstr "패치가 게임을 시작했을 때와 다릅니다: 다시 시작하여 적용하세요 (또는 다음 시작부터 사용됩니다)"
 
-msgid "The processor, memory and graphics run at full speed while GBA DS is open: the smoothest play, but the battery runs down faster and the device gets warmer."
-msgstr "GBA DS가 열려 있는 동안 프로세서, 메모리, 그래픽이 최고 속도로 동작합니다. 게임은 더 부드럽지만 배터리가 더 빨리 닳고 기기가 더 뜨거워집니다."
+msgid "The processor, memory and graphics run at full speed while PSX-DS is open: the smoothest play, but the battery runs down faster and the device gets warmer."
+msgstr "PSX-DS가 열려 있는 동안 프로세서, 메모리, 그래픽이 최고 속도로 동작합니다. 게임은 더 부드럽지만 배터리가 더 빨리 닳고 기기가 더 뜨거워집니다."
 
 msgid "the right face button"
 msgstr "오른쪽 버튼"
@@ -1864,8 +1864,8 @@ msgstr "이 게임에는 자체 값이 있습니다. X 또는 마지막 옵션�
 msgid "This game has no achievements yet"
 msgstr "이 게임에는 아직 업적이 없습니다"
 
-msgid "This is GBA DS v%s."
-msgstr "GBA DS v%s입니다."
+msgid "This is PSX-DS v%s."
+msgstr "PSX-DS v%s입니다."
 
 msgid "This is v%s. Look for a new version, and download and install it."
 msgstr "현재 v%s입니다. 새 버전을 확인하고 다운로드하여 설치합니다."
@@ -2026,8 +2026,8 @@ msgstr "게임의 다른 덤프와 함께 (%s)"
 msgid "with another version of the game (other patches, or another ROM)"
 msgstr "게임의 다른 버전과 함께 (다른 패치 또는 다른 ROM)"
 
-msgid "With automatic checks on, GBA DS looks for a new version once a day when the game list opens, and asks before downloading anything. Updates come from the releases on github.com/kyannon/gba-ds."
-msgstr "자동 확인을 켜면 GBA DS가 게임 목록을 열 때 하루에 한 번 새 버전을 확인하고, 다운로드하기 전에 먼저 묻습니다. 업데이트는 github.com/kyannon/gba-ds에 공개된 버전에서 가져옵니다."
+msgid "With automatic checks on, PSX-DS looks for a new version once a day when the game list opens, and asks before downloading anything. Updates come from the releases on github.com/Gin649/PSX-DS."
+msgstr "자동 확인을 켜면 PSX-DS가 게임 목록을 열 때 하루에 한 번 새 버전을 확인하고, 다운로드하기 전에 먼저 묻습니다. 업데이트는 github.com/Gin649/PSX-DS에 공개된 버전에서 가져옵니다."
 
 msgid "With Four buttons picked under Controls in the quick bar, the four-button layout replaces these."
 msgstr "빠른 바의 조작에서 4버튼을 선택하면 4버튼 배치가 이 설정을 대신합니다."
@@ -2056,8 +2056,8 @@ msgstr "Y 버튼 (왼쪽)"
 msgid "Your own and scraped logos on the second screen."
 msgstr "직접 만든 로고와 두 번째 화면에서 가져온 로고."
 
-msgid "Your own PNGs in gba-ds/overlays/. A screen without one gets the generated bezel in its default colors."
-msgstr "gba-ds/overlays/ 안의 직접 만든 PNG. PNG가 없는 화면에는 기본 색상의 생성된 베젤이 표시됩니다."
+msgid "Your own PNGs in psx-ds/overlays/. A screen without one gets the generated bezel in its default colors."
+msgstr "psx-ds/overlays/ 안의 직접 만든 PNG. PNG가 없는 화면에는 기본 색상의 생성된 베젤이 표시됩니다."
 
 msgid "your place is saved"
 msgstr "위치가 저장되어 있습니다"

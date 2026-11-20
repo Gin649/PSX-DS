@@ -68,9 +68,9 @@ bool logo_extract(const char* romPath, const char* gameCode, const char* outPng)
 
 	size_t sz = emu_state_size(&e);
 	void* st = malloc(sz);
-	uint32_t* back = malloc(GBA_W * GBA_H * 4);
-	uint32_t* fg = malloc(GBA_W * GBA_H * 4);
-	uint8_t* opaque = calloc(GBA_W * GBA_H, 1);
+	uint32_t* back = malloc(SCREEN_W * SCREEN_H * 4);
+	uint32_t* fg = malloc(SCREEN_W * SCREEN_H * 4);
+	uint8_t* opaque = calloc(SCREEN_W * SCREEN_H, 1);
 	emu_state_save(&e, st);
 	/* Layer switches only take effect when the display registers are
 	 * written; loading the state after setting them rewrites the registers
@@ -78,91 +78,91 @@ bool logo_extract(const char* romPath, const char* gameCode, const char* outPng)
 	layers(&e, -1); /* backdrop only */
 	emu_state_load(&e, st);
 	emu_frame(&e, 0);
-	memcpy(back, e.fb, GBA_W * GBA_H * 4);
+	memcpy(back, e.fb, SCREEN_W * SCREEN_H * 4);
 	if (p->logo.mask) layers(&e, -2); /* a mask cuts the logo out of the whole picture */
 	else if (p->logo.layers) layer_set(&e, p->logo.layers); /* a logo over several layers (FFTA: its shadow) */
 	else layers(&e, p->logo.layer);
 	emu_state_load(&e, st);
 	emu_frame(&e, 0);
-	memcpy(fg, e.fb, GBA_W * GBA_H * 4);
-	if (!p->logo.mask && p->logo.layers && p->logo.objMaxY > 0 && p->logo.objMaxY < GBA_H) {
+	memcpy(fg, e.fb, SCREEN_W * SCREEN_H * 4);
+	if (!p->logo.mask && p->logo.layers && p->logo.objMaxY > 0 && p->logo.objMaxY < SCREEN_H) {
 		/* below objMaxY, the BG layers without the sprites (Summon Night:
 		 * its PRESS START BUTTON is a sprite across the sword's hilt) */
 		layer_set(&e, p->logo.layers & ~0x10u);
 		emu_state_load(&e, st);
 		emu_frame(&e, 0);
-		memcpy(fg + p->logo.objMaxY * GBA_W, e.fb + p->logo.objMaxY * GBA_W, (size_t) (GBA_H - p->logo.objMaxY) * GBA_W * 4);
+		memcpy(fg + p->logo.objMaxY * SCREEN_W, e.fb + p->logo.objMaxY * SCREEN_W, (size_t) (SCREEN_H - p->logo.objMaxY) * SCREEN_W * 4);
 	}
-	if (!p->logo.mask && p->logo.layers && p->logo.lowFrom > 0 && p->logo.lowFrom < GBA_H) {
+	if (!p->logo.mask && p->logo.layers && p->logo.lowFrom > 0 && p->logo.lowFrom < SCREEN_H) {
 		/* from lowFrom down, only lowLayers (Sonic Pinball Party: its
 		 * badge's lowest rows beside the copyright line's) */
 		layer_set(&e, p->logo.lowLayers);
 		emu_state_load(&e, st);
 		emu_frame(&e, 0);
-		memcpy(fg + p->logo.lowFrom * GBA_W, e.fb + p->logo.lowFrom * GBA_W, (size_t) (GBA_H - p->logo.lowFrom) * GBA_W * 4);
+		memcpy(fg + p->logo.lowFrom * SCREEN_W, e.fb + p->logo.lowFrom * SCREEN_W, (size_t) (SCREEN_H - p->logo.lowFrom) * SCREEN_W * 4);
 	}
 	layers(&e, -2);
 	emu_close(&e);
 	free(st);
 
-	if (getenv("GBADS_LOGO_DEBUG")) {
+	if (getenv("PSXDS_LOGO_DEBUG")) {
 		char dbg[1200];
 		snprintf(dbg, sizeof(dbg), "%s.fg.png", outPng);
-		stbi_write_png(dbg, GBA_W, GBA_H, 4, fg, GBA_W * 4);
+		stbi_write_png(dbg, SCREEN_W, SCREEN_H, 4, fg, SCREEN_W * 4);
 		snprintf(dbg, sizeof(dbg), "%s.back.png", outPng);
-		stbi_write_png(dbg, GBA_W, GBA_H, 4, back, GBA_W * 4);
+		stbi_write_png(dbg, SCREEN_W, SCREEN_H, 4, back, SCREEN_W * 4);
 	}
 	uint8_t* inMask = NULL;
 	if (p->logo.mask) {
 		const LogoMask* m = p->logo.mask;
-		inMask = calloc(GBA_W * GBA_H, 1);
+		inMask = calloc(SCREEN_W * SCREEN_H, 1);
 		int pos = 0;
 		for (int r = 0; r < m->nRuns; ++r) {
 			for (int k = 0; k < m->runs[r] && pos < m->w * m->h; ++k, ++pos) {
 				int x = m->x + pos % m->w, y = m->y + pos / m->w;
-				if ((r & 1) && x < GBA_W && y < GBA_H) inMask[y * GBA_W + x] = 1;
+				if ((r & 1) && x < SCREEN_W && y < SCREEN_H) inMask[y * SCREEN_W + x] = 1;
 			}
 		}
 		for (int i = 0; i < m->nPatch; ++i) {
 			int at = m->patchAt[i];
-			if (at >= GBA_W * GBA_H) continue;
+			if (at >= SCREEN_W * SCREEN_H) continue;
 			uint32_t c = m->patchRgb[i];
 			inMask[at] = 1;
 			fg[at] = 0xFF000000u | (c & 0xFF) << 16 | (c & 0xFF00) | (c >> 16 & 0xFF);
 		}
 	}
 	/* opaque mask and bounding box above maxY */
-	int x0 = GBA_W, y0 = GBA_H, x1 = -1, y1 = -1, count = 0;
-	int maxY = p->logo.maxY ? p->logo.maxY : GBA_H;
-	int maxX = p->logo.maxX ? p->logo.maxX : GBA_W;
+	int x0 = SCREEN_W, y0 = SCREEN_H, x1 = -1, y1 = -1, count = 0;
+	int maxY = p->logo.maxY ? p->logo.maxY : SCREEN_H;
+	int maxX = p->logo.maxX ? p->logo.maxX : SCREEN_W;
 	for (int y = p->logo.minY; y < maxY; ++y) {
 		for (int x = p->logo.minX; x < maxX; ++x) {
-			uint32_t c = fg[y * GBA_W + x];
-			bool clear = inMask ? !inMask[y * GBA_W + x] : c == back[y * GBA_W + x];
+			uint32_t c = fg[y * SCREEN_W + x];
+			bool clear = inMask ? !inMask[y * SCREEN_W + x] : c == back[y * SCREEN_W + x];
 			if (p->logo.blackIsClear && (c & 0xFF) < 24 && ((c >> 8) & 0xFF) < 24 && ((c >> 16) & 0xFF) < 24) clear = true;
-			if (!clear) opaque[y * GBA_W + x] = 1;
+			if (!clear) opaque[y * SCREEN_W + x] = 1;
 		}
 	}
 	if (p->logo.lightEdgeClear) {
 		/* the layer's light background (Pokemon Pinball's white, striped):
 		 * light grey to white pixels reached from the picture's edges
 		 * through others like them, not the logo's own white inside it */
-		int* stack = malloc(sizeof(int) * GBA_W * GBA_H);
-		uint8_t* seen = calloc(GBA_W * GBA_H, 1);
+		int* stack = malloc(sizeof(int) * SCREEN_W * SCREEN_H);
+		uint8_t* seen = calloc(SCREEN_W * SCREEN_H, 1);
 		int n = 0;
 		for (int y = 0; y < maxY; ++y) {
-			for (int x = 0; x < GBA_W; ++x) {
-				if (x == 0 || y == 0 || x == GBA_W - 1 || y == maxY - 1) stack[n++] = y * GBA_W + x, seen[y * GBA_W + x] = 1;
+			for (int x = 0; x < SCREEN_W; ++x) {
+				if (x == 0 || y == 0 || x == SCREEN_W - 1 || y == maxY - 1) stack[n++] = y * SCREEN_W + x, seen[y * SCREEN_W + x] = 1;
 			}
 		}
 		while (n) {
-			int i = stack[--n], x = i % GBA_W, y = i / GBA_W;
+			int i = stack[--n], x = i % SCREEN_W, y = i / SCREEN_W;
 			uint32_t c = fg[i];
 			int r = c & 0xFF, g = (c >> 8) & 0xFF, b = (c >> 16) & 0xFF;
 			int hi = r > g ? (r > b ? r : b) : (g > b ? g : b), lo = r < g ? (r < b ? r : b) : (g < b ? g : b);
 			if (opaque[i] && !(lo >= 190 && hi - lo <= 40)) continue;
 			opaque[i] = 0;
-			const int nb[4] = { x > 0 ? i - 1 : -1, x < GBA_W - 1 ? i + 1 : -1, y > 0 ? i - GBA_W : -1, y < maxY - 1 ? i + GBA_W : -1 };
+			const int nb[4] = { x > 0 ? i - 1 : -1, x < SCREEN_W - 1 ? i + 1 : -1, y > 0 ? i - SCREEN_W : -1, y < maxY - 1 ? i + SCREEN_W : -1 };
 			for (int k = 0; k < 4; ++k) {
 				if (nb[k] >= 0 && !seen[nb[k]]) seen[nb[k]] = 1, stack[n++] = nb[k];
 			}
@@ -171,30 +171,30 @@ bool logo_extract(const char* romPath, const char* gameCode, const char* outPng)
 		free(seen);
 		/* and its white outline back: two pixels around what's left */
 		for (int pass = 0; pass < 2; ++pass) {
-			memcpy(back, opaque, GBA_W * GBA_H); /* (back's done with: a scratch copy) */
+			memcpy(back, opaque, SCREEN_W * SCREEN_H); /* (back's done with: a scratch copy) */
 			const uint8_t* was = (const uint8_t*) back;
 			for (int y = 0; y < maxY; ++y) {
-				for (int x = 0; x < GBA_W; ++x) {
-					int i = y * GBA_W + x;
+				for (int x = 0; x < SCREEN_W; ++x) {
+					int i = y * SCREEN_W + x;
 					if (was[i]) continue;
-					if ((x > 0 && was[i - 1]) || (x < GBA_W - 1 && was[i + 1]) || (y > 0 && was[i - GBA_W]) || (y < maxY - 1 && was[i + GBA_W])) opaque[i] = 1;
+					if ((x > 0 && was[i - 1]) || (x < SCREEN_W - 1 && was[i + 1]) || (y > 0 && was[i - SCREEN_W]) || (y < maxY - 1 && was[i + SCREEN_W])) opaque[i] = 1;
 				}
 			}
 		}
 	}
 	if (p->logo.edgeClear[0]) {
-		int* stack = malloc(sizeof(int) * GBA_W * GBA_H);
-		uint8_t* seen = calloc(GBA_W * GBA_H, 1);
+		int* stack = malloc(sizeof(int) * SCREEN_W * SCREEN_H);
+		uint8_t* seen = calloc(SCREEN_W * SCREEN_H, 1);
 		int n = 0;
 		/* (from outside the logo, and from the picture's edges: a layer
 		 * that fills the screen with the background, Battle Network
 		 * Rockman EXE's blue) */
-		for (int i = 0; stack && seen && i < GBA_W * maxY; ++i) {
-			int x = i % GBA_W, y = i / GBA_W;
-			if (!opaque[i] || x == 0 || x == GBA_W - 1 || y == 0 || y == maxY - 1) stack[n++] = i, seen[i] = 1;
+		for (int i = 0; stack && seen && i < SCREEN_W * maxY; ++i) {
+			int x = i % SCREEN_W, y = i / SCREEN_W;
+			if (!opaque[i] || x == 0 || x == SCREEN_W - 1 || y == 0 || y == maxY - 1) stack[n++] = i, seen[i] = 1;
 		}
 		while (stack && seen && n) {
-			int i = stack[--n], x = i % GBA_W, y = i / GBA_W;
+			int i = stack[--n], x = i % SCREEN_W, y = i / SCREEN_W;
 			if (opaque[i]) {
 				uint32_t c = fg[i];
 				int r = c & 0xFF, g = (c >> 8) & 0xFF, b = (c >> 16) & 0xFF;
@@ -206,7 +206,7 @@ bool logo_extract(const char* romPath, const char* gameCode, const char* outPng)
 				if (!clearIt) continue;
 				opaque[i] = 0;
 			}
-			const int nb[4] = { x > 0 ? i - 1 : -1, x < GBA_W - 1 ? i + 1 : -1, y > 0 ? i - GBA_W : -1, y < maxY - 1 ? i + GBA_W : -1 };
+			const int nb[4] = { x > 0 ? i - 1 : -1, x < SCREEN_W - 1 ? i + 1 : -1, y > 0 ? i - SCREEN_W : -1, y < maxY - 1 ? i + SCREEN_W : -1 };
 			for (int k = 0; k < 4; ++k) {
 				if (nb[k] >= 0 && !seen[nb[k]]) seen[nb[k]] = 1, stack[n++] = nb[k];
 			}
@@ -214,30 +214,30 @@ bool logo_extract(const char* romPath, const char* gameCode, const char* outPng)
 		free(stack);
 		free(seen);
 		/* (and what's left alone: at most one opaque neighbour) */
-		memcpy(back, opaque, GBA_W * GBA_H); /* (back's done with: a scratch copy) */
+		memcpy(back, opaque, SCREEN_W * SCREEN_H); /* (back's done with: a scratch copy) */
 		const uint8_t* was = (const uint8_t*) back;
 		for (int y = 0; y < maxY; ++y) {
-			for (int x = 0; x < GBA_W; ++x) {
-				int i = y * GBA_W + x;
+			for (int x = 0; x < SCREEN_W; ++x) {
+				int i = y * SCREEN_W + x;
 				if (!was[i]) continue;
-				int nb = (x > 0 && was[i - 1]) + (x < GBA_W - 1 && was[i + 1]) + (y > 0 && was[i - GBA_W]) + (y < maxY - 1 && was[i + GBA_W]);
+				int nb = (x > 0 && was[i - 1]) + (x < SCREEN_W - 1 && was[i + 1]) + (y > 0 && was[i - SCREEN_W]) + (y < maxY - 1 && was[i + SCREEN_W]);
 				if (nb <= 1) opaque[i] = 0;
 			}
 		}
 		/* (and specks: pieces under 16 pixels, 8-connected) */
-		int* q = malloc(sizeof(int) * GBA_W * GBA_H);
-		uint8_t* done = calloc(GBA_W * GBA_H, 1);
-		for (int s0 = 0; q && done && s0 < GBA_W * maxY; ++s0) {
+		int* q = malloc(sizeof(int) * SCREEN_W * SCREEN_H);
+		uint8_t* done = calloc(SCREEN_W * SCREEN_H, 1);
+		for (int s0 = 0; q && done && s0 < SCREEN_W * maxY; ++s0) {
 			if (!opaque[s0] || done[s0]) continue;
 			int head = 0, tail = 0;
 			q[tail++] = s0;
 			done[s0] = 1;
 			while (head < tail) {
-				int i = q[head++], x = i % GBA_W, y = i / GBA_W;
+				int i = q[head++], x = i % SCREEN_W, y = i / SCREEN_W;
 				for (int dy = -1; dy <= 1; ++dy) {
 					for (int dx = -1; dx <= 1; ++dx) {
-						int nx = x + dx, ny = y + dy, j = ny * GBA_W + nx;
-						if (nx < 0 || nx >= GBA_W || ny < 0 || ny >= maxY || !opaque[j] || done[j]) continue;
+						int nx = x + dx, ny = y + dy, j = ny * SCREEN_W + nx;
+						if (nx < 0 || nx >= SCREEN_W || ny < 0 || ny >= maxY || !opaque[j] || done[j]) continue;
 						done[j] = 1;
 						q[tail++] = j;
 					}
@@ -253,8 +253,8 @@ bool logo_extract(const char* romPath, const char* gameCode, const char* outPng)
 	if (p->logo.shadow[0] && p->logo.shadowReach > 0) {
 		/* (logo.shadow: row by row, each shadow pixel kept or not) */
 		int reach = p->logo.shadowReach;
-		uint8_t* shade = calloc(GBA_W * GBA_H, 1); /* 1 shadow, 2 shadow kept */
-		for (int i = 0; shade && i < GBA_W * maxY; ++i) {
+		uint8_t* shade = calloc(SCREEN_W * SCREEN_H, 1); /* 1 shadow, 2 shadow kept */
+		for (int i = 0; shade && i < SCREEN_W * maxY; ++i) {
 			if (!opaque[i]) continue;
 			uint32_t c = fg[i];
 			int r = c & 0xFF, g = (c >> 8) & 0xFF, b = (c >> 16) & 0xFF;
@@ -264,13 +264,13 @@ bool logo_extract(const char* romPath, const char* gameCode, const char* outPng)
 			}
 		}
 		for (int y = 0; shade && y < maxY; ++y) {
-			for (int x = 0; x < GBA_W; ++x) {
-				int i = y * GBA_W + x;
+			for (int x = 0; x < SCREEN_W; ++x) {
+				int i = y * SCREEN_W + x;
 				if (shade[i] != 1) continue;
 				bool keep = false;
 				for (int dy = 1; dy <= reach && !keep; ++dy) {
 					for (int dx = 0; dx <= reach && !keep; ++dx) {
-						int X = x - dx, Y = y - dy, j = Y * GBA_W + X;
+						int X = x - dx, Y = y - dy, j = Y * SCREEN_W + X;
 						if (X >= 0 && Y >= 0 && opaque[j] && shade[j] != 1) keep = true;
 					}
 				}
@@ -281,8 +281,8 @@ bool logo_extract(const char* romPath, const char* gameCode, const char* outPng)
 		free(shade);
 	}
 	for (int y = 0; y < maxY; ++y) {
-		for (int x = 0; x < GBA_W; ++x) {
-			if (!opaque[y * GBA_W + x]) continue;
+		for (int x = 0; x < SCREEN_W; ++x) {
+			if (!opaque[y * SCREEN_W + x]) continue;
 			++count;
 			if (x < x0) x0 = x;
 			if (x > x1) x1 = x;
@@ -296,7 +296,7 @@ bool logo_extract(const char* romPath, const char* gameCode, const char* outPng)
 		uint8_t* rgba = malloc((size_t) w * h * 4);
 		for (int y = 0; y < h; ++y) {
 			for (int x = 0; x < w; ++x) {
-				int i = (y0 + y) * GBA_W + x0 + x;
+				int i = (y0 + y) * SCREEN_W + x0 + x;
 				uint32_t c = fg[i];
 				uint8_t* o = &rgba[(y * w + x) * 4];
 				o[0] = c & 0xFF;
@@ -434,10 +434,10 @@ static void enqueue(const char* romPath, const char* gameCode, const char* outPn
 		while (*tail) tail = &(*tail)->next;
 	}
 	*tail = j;
-	/* (GBADS_SYNC=1, regression tests: inline too, like the web build) */
-	if (!running && !(getenv("GBADS_SYNC") && atoi(getenv("GBADS_SYNC")))) running = pthread_create(&thread, NULL, worker, NULL) == 0;
+	/* (PSXDS_SYNC=1, regression tests: inline too, like the web build) */
+	if (!running && !(getenv("PSXDS_SYNC") && atoi(getenv("PSXDS_SYNC")))) running = pthread_create(&thread, NULL, worker, NULL) == 0;
 	if (!running) {
-		/* no threads (the web build), or GBADS_SYNC: the work now */
+		/* no threads (the web build), or PSXDS_SYNC: the work now */
 #ifdef __wasi__
 		/* (the web build: only a game's own logo, asked for while it's
 		 * played; the rest one a frame, logo_step, so the game list shows

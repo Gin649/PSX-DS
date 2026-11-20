@@ -5,8 +5,8 @@
  * screen is up and stable. The map area is cropped out and handed back.
  * The live game is never paused or touched.
  */
-#ifndef GBADS_MAPCAP_H
-#define GBADS_MAPCAP_H
+#ifndef PSXDS_MAPCAP_H
+#define PSXDS_MAPCAP_H
 
 #include "emu.h"
 
@@ -65,7 +65,7 @@ uint32_t mapcap_room_key(MapCapture* mc, Emu* live);
 void mapcap_size(MapCapture* mc, int* w, int* h);
 
 #ifdef __wasi__
-/* The web player's capture worker: its whole run (main, GBADS_CAPTURE_SERVE). */
+/* The web player's capture worker: its whole run (main, PSXDS_CAPTURE_SERVE). */
 int mapcap_web_serve(const char* romPath, const char* code, bool tight);
 #endif
 

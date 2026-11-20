@@ -1,6 +1,6 @@
 #!/bin/bash
-# Reproducible cross-build of GBA DS for ROCKNIX (aarch64) on an x86_64 Linux host.
-# Produces dist/gba-ds-v<VERSION>-linux-aarch64.zip (ROCKNIX, BananaOS).
+# Reproducible cross-build of PSX-DS for ROCKNIX (aarch64) on an x86_64 Linux host.
+# Produces dist/psx-ds-v<VERSION>-linux-aarch64.zip (ROCKNIX, BananaOS).
 #
 # Needs: git, cmake, make, zip, an x86_64 host. Everything else is fetched into ./deps.
 # Set AARCH64_TOOLCHAIN_BIN to use your own aarch64-linux-gnu-gcc instead.
@@ -24,8 +24,8 @@ if [ -z "${AARCH64_TOOLCHAIN_BIN:-}" ]; then
 		done
 		# ...and its limits.h doesn't chain to glibc's (PATH_MAX etc. missing).
 		L=$(echo "$TC"/lib/gcc/aarch64-linux-gnu/*/include-fixed/limits.h)
-		if ! grep -qE "gbadual|gba-ds" "$L"; then  # already patched (by either name)
-			{ printf '/* gba-ds: chain to glibc limits.h */\n#ifndef _GCC_LIMITS_H_\n#define _GCC_LIMITS_H_\n#include_next <limits.h>\n#endif\n'; cat "$L"; } > "$L.tmp" && mv "$L.tmp" "$L"
+		if ! grep -qE "gbadual|psx-ds" "$L"; then  # already patched (by either name)
+			{ printf '/* psx-ds: chain to glibc limits.h */\n#ifndef _GCC_LIMITS_H_\n#define _GCC_LIMITS_H_\n#include_next <limits.h>\n#endif\n'; cat "$L"; } > "$L.tmp" && mv "$L.tmp" "$L"
 		fi
 	fi
 	export AARCH64_TOOLCHAIN_BIN="$TC/bin"
@@ -52,104 +52,104 @@ cmake -S "$DEPS/SDL2" -B "$DEPS/SDL2/build-aarch64" -DCMAKE_TOOLCHAIN_FILE="$ROO
 	-DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$DEPS/sdl-aarch64" -DSDL_STATIC=OFF -DSDL_TEST=OFF
 make -C "$DEPS/SDL2/build-aarch64" -j"$(nproc)" install
 
-# GBADS_SIDE=slug: a side build of a game branch (game/<slug>), to try it
-# beside the main install: the folder gba-ds-<slug> and the Ports entry
-# "GBA DS <game> testing", its own settings and states, version
+# PSXDS_SIDE=slug: a side build of a game branch (game/<slug>), to try it
+# beside the main install: the folder psx-ds-<slug> and the Ports entry
+# "PSX-DS <game> testing", its own settings and states, version
 # VERSION+<slug>, no updates and no EmulationStation / BananaOS integration
 # (the Makefile's SIDE), and a game list of only that game's releases. The
 # game's name and codes come from docs/games/<slug>.md (its title and its
-# Releases row); GBADS_SIDE_NAME / GBADS_SIDE_CODES ("A2NE A2NP") override.
-SIDE="${GBADS_SIDE:-}"
+# Releases row); PSXDS_SIDE_NAME / PSXDS_SIDE_CODES ("A2NE A2NP") override.
+SIDE="${PSXDS_SIDE:-}"
 SIDE_NAME="" SIDE_CODES=""
 if [ -n "$SIDE" ]; then
 	if ! [[ $SIDE =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
-		echo "GBADS_SIDE: lower-case letters, digits and dashes only (not $SIDE)" >&2
+		echo "PSXDS_SIDE: lower-case letters, digits and dashes only (not $SIDE)" >&2
 		exit 1
 	fi
 	RULES="docs/games/$SIDE.md"
-	SIDE_NAME="${GBADS_SIDE_NAME:-$(sed -n '1s/^# *//p' "$RULES" 2>/dev/null)}"
-	SIDE_CODES="${GBADS_SIDE_CODES:-$(grep -m1 '^| Releases |' "$RULES" 2>/dev/null | grep -o '`[A-Z0-9]\{4\}`' | tr -d '`' | tr '\n' ' ' | sed 's/ *$//')}"
+	SIDE_NAME="${PSXDS_SIDE_NAME:-$(sed -n '1s/^# *//p' "$RULES" 2>/dev/null)}"
+	SIDE_CODES="${PSXDS_SIDE_CODES:-$(grep -m1 '^| Releases |' "$RULES" 2>/dev/null | grep -o '`[A-Z0-9]\{4\}`' | tr -d '`' | tr '\n' ' ' | sed 's/ *$//')}"
 	if [ -z "$SIDE_NAME" ] || [ -z "$SIDE_CODES" ]; then
-		echo "GBADS_SIDE: $RULES needs its title (# Name) and a Releases row with the codes (\`A2NE\`), or set GBADS_SIDE_NAME and GBADS_SIDE_CODES" >&2
+		echo "PSXDS_SIDE: $RULES needs its title (# Name) and a Releases row with the codes (\`A2NE\`), or set PSXDS_SIDE_NAME and PSXDS_SIDE_CODES" >&2
 		exit 1
 	fi
 	# (no characters SD cards' file systems refuse: "Game: Subtitle" -> "Game - Subtitle")
 	SIDE_NAME="$(printf '%s' "$SIDE_NAME" | sed 's/ *: */ - /g; s#[/\\*?"<>|]##g')"
-	echo "side build: $SIDE, \"GBA DS $SIDE_NAME testing\", codes $SIDE_CODES"
+	echo "side build: $SIDE, \"PSX-DS $SIDE_NAME testing\", codes $SIDE_CODES"
 fi
 
-# --- gba-ds ---------------------------------------------------------------
+# --- psx-ds ---------------------------------------------------------------
 make CROSS="$CROSS" MGBA_SRC="$DEPS/mgba" MGBA_BUILD="$DEPS/mgba/build-aarch64" \
 	SDL_PREFIX="$DEPS/sdl-aarch64" OUT=build/aarch64${SIDE:+-$SIDE} OPTFLAGS="-O2 -mcpu=cortex-a55" SIDE="$SIDE" SIDE_CODES="$SIDE_CODES"
 
 # --- package ---------------------------------------------------------------
 VERSION=$(cat VERSION)
-APP=gba-ds${SIDE:+-$SIDE}            # the install folder
-ENTRY="GBA DS${SIDE:+ $SIDE_NAME testing}"   # the Ports entry
-ZIP="gba-ds-v$VERSION${SIDE:+-$SIDE}-linux-aarch64.zip"
+APP=psx-ds${SIDE:+-$SIDE}            # the install folder
+ENTRY="PSX-DS${SIDE:+ $SIDE_NAME testing}"   # the Ports entry
+ZIP="psx-ds-v$VERSION${SIDE:+-$SIDE}-linux-aarch64.zip"
 PKG="$ROOT/build/pkg/$APP"
 rm -rf "$ROOT/build/pkg"
 mkdir -p "$PKG"
-"${CROSS}strip" -o "$PKG/gba-ds" build/aarch64${SIDE:+-$SIDE}/gba-ds
-cp dist/launch.sh dist/es-play.sh dist/screens.sh dist/gba-ds.cfg dist/gamecontrollerdb.txt dist/banana-play.sh "$PKG/"
+"${CROSS}strip" -o "$PKG/psx-ds" build/aarch64${SIDE:+-$SIDE}/psx-ds
+cp dist/launch.sh dist/es-play.sh dist/screens.sh dist/psx-ds.cfg dist/gamecontrollerdb.txt dist/banana-play.sh "$PKG/"
 mkdir -p "$PKG/logos"
 printf "Optional: your own logo images (<CODE>.png or .bmp) override the ones extracted from the games.\n" > "$PKG/logos/README.txt"
 mkdir -p "$PKG/cheats"
-printf "RetroArch cheat files (.cht) for GBA DS, in this folder or subfolders: picked by name, as RetroArch does (Game (USA).gba -> Game (USA) (Code Breaker).cht).\nRetroArch's own cheat folders are searched too (cheat_dir in gba-ds.cfg).\nSwitch cheats on in the pause menu: Extras > Cheats. More in the wiki: https://github.com/kyannon/gba-ds/wiki/Playing#cheats\n" > "$PKG/cheats/README.txt"
+printf "RetroArch cheat files (.cht) for PSX-DS, in this folder or subfolders: picked by name, as RetroArch does (Game (USA).gba -> Game (USA) (Code Breaker).cht).\nRetroArch's own cheat folders are searched too (cheat_dir in psx-ds.cfg).\nSwitch cheats on in the pause menu: Extras > Cheats. More in the wiki: https://github.com/Gin649/PSX-DS/wiki/Playing#cheats\n" > "$PKG/cheats/README.txt"
 mkdir -p "$PKG/overlays"
 cp dist/overlays-README.txt "$PKG/overlays/README.txt"
 mkdir -p "$PKG/patches"
-printf "Patches for GBA DS (.ips, .ups, .bps: romhacks, colour patches, translations), in a folder for each game,\nnamed after the game and its region (for example \"Mario & Luigi - Superstar Saga (USA)\"). GBA DS makes a game's folder\nthe first time you play it; your ROM itself is never changed.\nSwitch patches on in the pause menu: Extras > Patches. More in the wiki: https://github.com/kyannon/gba-ds/wiki/Playing#patches\n" > "$PKG/patches/README.txt"
+printf "Patches for PSX-DS (.ips, .ups, .bps: romhacks, colour patches, translations), in a folder for each game,\nnamed after the game and its region (for example \"Mario & Luigi - Superstar Saga (USA)\"). PSX-DS makes a game's folder\nthe first time you play it; your ROM itself is never changed.\nSwitch patches on in the pause menu: Extras > Patches. More in the wiki: https://github.com/Gin649/PSX-DS/wiki/Playing#patches\n" > "$PKG/patches/README.txt"
 cp README.md "$PKG/README.md"
 # mGBA is statically linked (MPL-2.0): ship its licence and where to get its source
 mkdir -p "$PKG/licenses"
-cp LICENSE "$PKG/licenses/GBA-DS-LICENSE.txt"
+cp LICENSE "$PKG/licenses/PSX-DS-LICENSE.txt"
 cp "$DEPS/mgba/LICENSE" "$PKG/licenses/mGBA-LICENSE.txt"
 cp assets/fonts/Jost-OFL.txt "$PKG/licenses/Jost-OFL.txt"
 cp third_party/rcheevos/LICENSE "$PKG/licenses/rcheevos-LICENSE.txt"
 cp third_party/libwebp/COPYING "$PKG/licenses/libwebp-COPYING.txt"
 cp third_party/libwebp/PATENTS "$PKG/licenses/libwebp-PATENTS.txt"
-printf "GBA DS %s is free software under the GNU General Public License, version 3 only (GBA-DS-LICENSE.txt).\nIt statically links libmgba (c) Jeffrey Pfau, MPL-2.0.\nmGBA source: https://github.com/mgba-emu/mgba (commit %s)\nIts text is set in Jost (c) The Jost Project Authors, SIL Open Font License 1.1 (Jost-OFL.txt).\nRetroAchievements support: rcheevos (c) RetroAchievements, MIT (rcheevos-LICENSE.txt), %s.\nWebP images: libwebp (c) Google Inc., BSD 3-clause (libwebp-COPYING.txt, libwebp-PATENTS.txt), v1.6.0.\nGBA DS source: https://github.com/kyannon/gba-ds\n" "$VERSION" "$MGBA_COMMIT" "$(tail -1 third_party/rcheevos/VERSION)" > "$PKG/licenses/README.txt"
-sed "s#/gba-ds/#/$APP/#g; s#gba-ds-error.log#$APP-error.log#" "dist/GBA DS.sh" > "$ROOT/build/pkg/$ENTRY.sh"
+printf "PSX-DS %s is free software under the GNU General Public License, version 3 only (PSX-DS-LICENSE.txt).\nIt statically links libmgba (c) Jeffrey Pfau, MPL-2.0.\nmGBA source: https://github.com/mgba-emu/mgba (commit %s)\nIts text is set in Jost (c) The Jost Project Authors, SIL Open Font License 1.1 (Jost-OFL.txt).\nRetroAchievements support: rcheevos (c) RetroAchievements, MIT (rcheevos-LICENSE.txt), %s.\nWebP images: libwebp (c) Google Inc., BSD 3-clause (libwebp-COPYING.txt, libwebp-PATENTS.txt), v1.6.0.\nPSX-DS source: https://github.com/Gin649/PSX-DS\n" "$VERSION" "$MGBA_COMMIT" "$(tail -1 third_party/rcheevos/VERSION)" > "$PKG/licenses/README.txt"
+sed "s#/psx-ds/#/$APP/#g; s#psx-ds-error.log#$APP-error.log#" "dist/PSX-DS.sh" > "$ROOT/build/pkg/$ENTRY.sh"
 # EmulationStation artwork for the Ports entry
 mkdir -p "$ROOT/build/pkg/images"
-cp assets/brand/gba-ds-icon.png "$ROOT/build/pkg/images/$ENTRY.png"
+cp assets/brand/psx-ds-icon.png "$ROOT/build/pkg/images/$ENTRY.png"
 # and inside the app's folder, for menus that install the folder alone (BananaOS's
 # Store: its catalog entry's "menu" > "media" > "image" names images/icon.png)
 mkdir -p "$PKG/images"
-cp assets/brand/gba-ds-icon-transparent.png "$PKG/images/icon.png"
-# Dev builds carry the web build for State Saver's GBA DS tab (drop the zip
-# there to run this build in a browser). GBADS_WEB_WORK: build-web.sh's WORKDIR.
+cp assets/brand/psx-ds-icon-transparent.png "$PKG/images/icon.png"
+# Dev builds carry the web build for State Saver's PSX-DS tab (drop the zip
+# there to run this build in a browser). PSXDS_WEB_WORK: build-web.sh's WORKDIR.
 if [[ $VERSION == *-dev ]]; then
-	if "$ROOT/scripts/build-web.sh" ${GBADS_WEB_WORK:+"$GBADS_WEB_WORK"} > "$ROOT/build/web.log" 2>&1; then
+	if "$ROOT/scripts/build-web.sh" ${PSXDS_WEB_WORK:+"$PSXDS_WEB_WORK"} > "$ROOT/build/web.log" 2>&1; then
 		mkdir -p "$PKG/web"
-		cp "$ROOT/build/web/gba-ds.wasm" "$PKG/web/"
+		cp "$ROOT/build/web/psx-ds.wasm" "$PKG/web/"
 		echo "$VERSION" > "$PKG/web/VERSION"
 	else
-		echo "web build failed (build/web.log): the zip has no web/gba-ds.wasm"
+		echo "web build failed (build/web.log): the zip has no web/psx-ds.wasm"
 	fi
 fi
 # The final dev build before a release carries test save states for the new
-# games (tools/make_device_states.py makes the folder): GBADS_DEVICE_STATES=DIR
+# games (tools/make_device_states.py makes the folder): PSXDS_DEVICE_STATES=DIR
 # copies its files into states/ (dev versions only; CLAUDE.md, "Final dev build").
-if [ -n "${GBADS_DEVICE_STATES:-}" ]; then
+if [ -n "${PSXDS_DEVICE_STATES:-}" ]; then
 	if [[ $VERSION != *-dev ]]; then
-		echo "GBADS_DEVICE_STATES: test states go only into -dev builds (VERSION is $VERSION)" >&2
+		echo "PSXDS_DEVICE_STATES: test states go only into -dev builds (VERSION is $VERSION)" >&2
 		exit 1
 	fi
-	if ! ls "$GBADS_DEVICE_STATES"/*.state > /dev/null 2>&1; then
-		echo "GBADS_DEVICE_STATES: no .state files in $GBADS_DEVICE_STATES (run tools/make_device_states.py)" >&2
+	if ! ls "$PSXDS_DEVICE_STATES"/*.state > /dev/null 2>&1; then
+		echo "PSXDS_DEVICE_STATES: no .state files in $PSXDS_DEVICE_STATES (run tools/make_device_states.py)" >&2
 		exit 1
 	fi
 	mkdir -p "$PKG/states"
-	cp "$GBADS_DEVICE_STATES"/*.state "$GBADS_DEVICE_STATES"/TEST-STATES.txt "$PKG/states/"
+	cp "$PSXDS_DEVICE_STATES"/*.state "$PSXDS_DEVICE_STATES"/TEST-STATES.txt "$PKG/states/"
 	echo "test states: $(ls "$PKG/states"/*.state | wc -l) in states/"
 fi
-chmod +x "$PKG"/*.sh "$PKG/gba-ds" "$ROOT/build/pkg/$ENTRY.sh"
+chmod +x "$PKG"/*.sh "$PKG/psx-ds" "$ROOT/build/pkg/$ENTRY.sh"
 if [ -n "$SIDE" ]; then
-	rm -f "$ROOT"/dist/gba-ds-*-"$SIDE"-linux-aarch64.zip
+	rm -f "$ROOT"/dist/psx-ds-*-"$SIDE"-linux-aarch64.zip
 else
-	rm -f "$ROOT"/dist/gba-ds-*rocknix-aarch64.zip "$ROOT"/dist/gba-ds-v*[0-9]-linux-aarch64.zip "$ROOT"/dist/gba-ds-v*-dev-linux-aarch64.zip
+	rm -f "$ROOT"/dist/psx-ds-*rocknix-aarch64.zip "$ROOT"/dist/psx-ds-v*[0-9]-linux-aarch64.zip "$ROOT"/dist/psx-ds-v*-dev-linux-aarch64.zip
 fi
 (cd "$ROOT/build/pkg" && zip -qr "$ROOT/dist/$ZIP" "$APP" "$ENTRY.sh" images)
 echo "built dist/$ZIP"

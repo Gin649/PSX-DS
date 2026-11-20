@@ -1,6 +1,6 @@
 /* Windows, physical screens, input and drawing shared by the library and the game. */
-#ifndef GBADS_UI_H
-#define GBADS_UI_H
+#ifndef PSXDS_UI_H
+#define PSXDS_UI_H
 
 #include "config.h"
 #include "textfont.h"
@@ -130,7 +130,7 @@ void ui_image(int screen, SDL_Texture* const* texPerView, int w, int h, const ch
 /* Pixel-art drawing for the game and map: whole-number prescale (sharp at any
  * size), optional LCD grid, then filtered to the final size on the GPU.
  * lcd: 0 no grid, 1 a cell per pixel, n a cell per n x n pixels (a picture
- * made at n times the GBA's resolution, like Mario Kart's HUD screen). */
+ * made at n times the PS1's resolution, like Mario Kart's HUD screen). */
 void ui_image_pixels(int screen, SDL_Texture* const* texPerView, int w, int h, const char* mode, int lcd);
 /* Where ui_image_pixels puts a w x h image on a screen (screen-local coords). */
 SDL_Rect ui_image_rect(int screen, int w, int h, const char* mode);
@@ -141,7 +141,7 @@ void ui_clip(int screen, const SDL_Rect* clip);
  * drawn on the screens, so the second screen on Android redraws. */
 void ui_update_texture(SDL_Texture* t, const void* px, int pitch);
 /* Colour correction for everything given to ui_update_texture (the game's
- * pictures, ABGR8888): the GBA's own screen, as mGBA's GBA Color shader
+ * pictures, ABGR8888): the PS1's own screen, as SwanStation's PS1 Color shader
  * (sRGB profile, Darken Screen 0.5) draws it. */
 void ui_color_correction(bool on);
 /* Display > Shader (config.h SH_*): the subpixel presets brighten every
@@ -207,12 +207,12 @@ void ui_free_image(SDL_Texture* tex[2]);
  * either sized as the extracted logo is (GEN-11); else the one extracted from the ROM
  * (<state_dir>/logos/<CODE>.png), which is queued for extraction in the
  * background if it doesn't exist yet (watch logo_generation() and call
- * again). pixelArt: one pixel per GBA pixel, drawn with "integer". */
-/* A scraped logo not pixelated: LOGO_SUB of its pixels per GBA pixel. */
+ * again). pixelArt: one pixel per PS1 pixel, drawn with "integer". */
+/* A scraped logo not pixelated: LOGO_SUB of its pixels per PS1 pixel. */
 #define LOGO_SUB 4
 /* The game's logo as an RGBA32 surface (caller frees): the user's file, a
  * scraped one, or the one extracted from the title screen; NULL if none
- * exists yet. *sub (may be NULL): the surface's pixels per GBA pixel (1,
+ * exists yet. *sub (may be NULL): the surface's pixels per PS1 pixel (1,
  * or LOGO_SUB for a scraped logo at full resolution). */
 SDL_Surface* ui_logo_surface(const Config* c, const char* rom, const char* code, bool* pixelArt, int* sub);
 bool ui_load_logo(const Config* cfg, const char* rom, const char* code, SDL_Texture* tex[2], int* w, int* h,
@@ -242,7 +242,7 @@ const char* ui_script_load(void);
 bool ui_screenshot_stacked(const char* pngPath);
 void ui_osd(const char* fmt, ...);
 void ui_osd_long(const char* fmt, ...); /* (the same for 5 s: a warning) */
-int ui_volume(void); /* GBA DS's own sound volume, 0-100 (100 unless launch.sh asks for one) */
+int ui_volume(void); /* PSX-DS's own sound volume, 0-100 (100 unless launch.sh asks for one) */
 const char* ui_osd_text(void); /* NULL when expired */
 
 /* Raw controller input for the button mapper (mapper.c): queued from

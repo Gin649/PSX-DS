@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Stand-in for GitHub's latest-release API, for testing GBA DS's updater
+"""Stand-in for GitHub's latest-release API, for testing PSX-DS's updater
 offline (docs/TESTING.md, "Updates"):
 
   python3 tools/update_mock.py --zip RELEASE.zip | --apk APP.apk
                                [--version 9.9.9] [--port 8098]
                                [--bad-digest] [--slow] [--status 200]
 
-then run GBA DS with
+then run PSX-DS with
   --update-url=http://127.0.0.1:8098/repos/kyannon/gba-ds/releases/latest
 
 GET /repos/kyannon/gba-ds/releases/latest answers like GitHub (tag_name,
@@ -32,8 +32,8 @@ ap.add_argument("--status", type=int, default=200)
 args = ap.parse_args()
 
 data = open(args.zip or args.apk, "rb").read()
-zipName = f"gba-ds-v{args.version}-linux-aarch64.zip"
-apkName = f"gba-ds-v{args.version}-android.apk"
+zipName = f"psx-ds-v{args.version}-linux-aarch64.zip"
+apkName = f"psx-ds-v{args.version}-android.apk"
 name = zipName if args.zip else apkName
 other = apkName if args.zip else zipName
 digest = "sha256:" + ("0" * 64 if args.bad_digest else hashlib.sha256(data).hexdigest())
@@ -76,8 +76,8 @@ class H(BaseHTTPRequestHandler):
                 "body": NOTES,
                 "author": {"login": "kyannon", "name": "not an asset"},
                 "assets": [
-                    {"name": "gba-ds-cocoon-player.json", "size": 10, "digest": "sha256:" + "1" * 64,
-                     "browser_download_url": host + "/download/gba-ds-cocoon-player.json",
+                    {"name": "psx-ds-cocoon-player.json", "size": 10, "digest": "sha256:" + "1" * 64,
+                     "browser_download_url": host + "/download/psx-ds-cocoon-player.json",
                      "uploader": {"login": "kyannon"}},
                     {"name": name, "size": len(data), "digest": digest, "content_type": "application/octet-stream",
                      "browser_download_url": host + "/download/" + name, "uploader": {"login": "kyannon", "name": "x"}},

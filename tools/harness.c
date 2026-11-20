@@ -68,7 +68,7 @@ static uint32_t* hudBuf; /* split's picture */
 static void shot(const char* name) {
 	char path[512];
 	snprintf(path, sizeof(path), "%s/%s.png", outdir, name);
-	write_png(path, emu.fb, GBA_W, GBA_H, GBA_W);
+	write_png(path, emu.fb, SCREEN_W, SCREEN_H, SCREEN_W);
 }
 
 static uint8_t watchBuf[0x40000];
@@ -115,7 +115,7 @@ int main(int argc, char** argv) {
 			shot(a1);
 		} else if (!strcmp(cmd, "split")) {
 			/* split BGMASK PRIO (on) / split off: the HUD split (emu_hud_split) */
-			static uint32_t hud[GBA_W * GBA_H];
+			static uint32_t hud[SCREEN_W * SCREEN_H];
 			if (!strcmp(a1, "off")) emu_hud_split(&emu, false, 0, NULL, 0, hud);
 			else {
 				/* sprites of priority PRIO */
@@ -127,7 +127,7 @@ int main(int argc, char** argv) {
 			/* the HUD split's picture */
 			char path[512];
 			snprintf(path, sizeof(path), "%s/%s.png", outdir, a1);
-			if (hudBuf) write_png(path, hudBuf, GBA_W, GBA_H, GBA_W);
+			if (hudBuf) write_png(path, hudBuf, SCREEN_W, SCREEN_H, SCREEN_W);
 		} else if (!strcmp(cmd, "seq")) {
 			int n = atoi(a2), step = atoi(a3);
 			for (int i = 0; i < n; ++i) {
@@ -189,7 +189,7 @@ int main(int argc, char** argv) {
 			size_t sz = emu_state_size(&emu);
 			void* st = malloc(sz);
 			emu_state_save(&emu, st);
-			static uint32_t a[GBA_W * GBA_H], b[GBA_W * GBA_H];
+			static uint32_t a[SCREEN_W * SCREEN_H], b[SCREEN_W * SCREEN_H];
 			/* b = backdrop only (all layers off) */
 			emu_state_load(&emu, st);
 			for (int i = 0; i < 5; ++i) emu.core->enableVideoLayer(emu.core, i, false);
@@ -201,14 +201,14 @@ int main(int argc, char** argv) {
 				emu_frame(&emu, 0);
 				memcpy(a, emu.fb, sizeof(a));
 				if (L >= 0) {
-					for (int i = 0; i < GBA_W * GBA_H; ++i) {
+					for (int i = 0; i < SCREEN_W * SCREEN_H; ++i) {
 						if (a[i] == b[i]) a[i] = 0xFFFF00FF;
 					}
 				}
 				char path[512];
 				if (L < 0) snprintf(path, sizeof(path), "%s/%s_all.png", outdir, a1);
 				else snprintf(path, sizeof(path), "%s/%s_L%d.png", outdir, a1, L);
-				write_png(path, a, GBA_W, GBA_H, GBA_W);
+				write_png(path, a, SCREEN_W, SCREEN_H, SCREEN_W);
 			}
 			for (int i = 0; i < 5; ++i) emu.core->enableVideoLayer(emu.core, i, true);
 			emu_state_load(&emu, st);

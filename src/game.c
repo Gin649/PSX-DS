@@ -117,18 +117,18 @@ static struct {
 } ahead = { .lock = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER };
 static bool aheadInFlight; /* the worker is emulating the next frame */
 static bool aheadReady;    /* it has: that frame is emulated but not yet used */
-static uint32_t aheadFb[GBA_W * GBA_H]; /* the frame on screen, while the worker writes the next */
+static uint32_t aheadFb[SCREEN_W * SCREEN_H]; /* the frame on screen, while the worker writes the next */
 
-/* Bits above the GBA keys, for run_frame: the SNES layout's camera pan
+/* Bits above the PS1 keys, for run_frame: the SNES layout's camera pan
  * (profile controls.snes) left / right while a shoulder is held. */
 #define KX_PAN_L (1u << 20)
 #define KX_PAN_R (1u << 21)
-static bool debug; /* GBADS_DEBUG (declared again below) */
+static bool debug; /* PSXDS_DEBUG (declared again below) */
 static const struct MapProfile* ctlProf; /* NULL: no alternate layout for this game */
 
 /* One frame of the game with these keys (on the worker too, while the main
  * thread leaves the core alone). */
-static uint32_t frameKeys; /* the GBA keys of the last frame run */
+static uint32_t frameKeys; /* the PS1 keys of the last frame run */
 /* Bug reports (the quick bar's bug button): the keys of every frame run
  * and a state a second, kept for the last ~11 seconds, so a report can
  * hold the game from 10 seconds before and every key since. bugFrame
@@ -172,7 +172,7 @@ typedef struct {
 	int hidden;   /* sprites left out this frame */
 	bool havePic;
 	int picRow;   /* the table row on pic's first line */
-	uint32_t pic[GBA_W * GBA_H];
+	uint32_t pic[SCREEN_W * SCREEN_H];
 	/* (profile tall.live.carry) its camera's row, walked to where it's held;
 	 * what it keeps of its own from its last first frame (carried): its BG
 	 * tiles, vars and queued copies into them */
@@ -196,13 +196,13 @@ static void* twinStates[2]; /* the game's state from before each of the last two
 static uint32_t twinKeys[2];
 static int twinHave, twinCur; /* how many of them there are; the latest */
 static const MapProfile* twinProf;
-static bool tallTrace; /* GBADS_TALL_TRACE: a line a frame about the live view */
+static bool tallTrace; /* PSXDS_TALL_TRACE: a line a frame about the live view */
 static int twinShakeNow, twinShakeNext; /* the game's screen shake in this frame's picture / the next's */
 static bool tallMsg, tallGameTop; /* (for the log: PP-11's screen, the top screen's picture) */
 static bool tallTopLogo; /* PP-11's screen up with no table rows above it: the logo on the top screen */
 static bool tallFixedBot; /* PP-10: the game's banners on the bottom screen (the ball's there) */
 static int tallFixedHold; /* frames the banners stay where they went with none shown */
-static uint32_t lastTop[GBA_W * GBA_H]; /* the top screen before PP-11's screen came up */
+static uint32_t lastTop[SCREEN_W * SCREEN_H]; /* the top screen before PP-11's screen came up */
 static bool haveLastTop;
 
 /* a worker thread for each copy: runs fn(arg) when asked */
@@ -279,7 +279,7 @@ static int tall_rows_of(const MapProfile* p, Emu* e) {
 	const typeof(p->tall.live.carry)* C = &p->tall.live.carry;
 	if (!C->cam || !C->rowsAt) return p->tall.rows;
 	int h = emu_read16(e, C->rowsAt) - C->bottomLess;
-	return h > 2 * GBA_H + C->top && h < 1024 ? h : 2 * GBA_H + C->top;
+	return h > 2 * SCREEN_H + C->top && h < 1024 ? h : 2 * SCREEN_H + C->top;
 }
 static int tall_top_of(const MapProfile* p) { return p->tall.live.carry.cam ? p->tall.live.carry.top : 0; }
 /* the view's row as the game keeps it (the next frame's BG VOFS; carry:
@@ -370,8 +370,8 @@ static void twin_hide(Twin* tw) {
 		if ((a0 & 0x0300) == 0x0200 || (a0 >> 14) == 3) continue;
 		uint16_t a1 = GAME_OAM16(i * 8 + 2);
 		int y = a0 & 0xFF, h = obj_height(a0, a1);
-		if (y >= GBA_H) y -= 256;
-		if (y >= GBA_H || y + h <= 0) continue; /* (off its screen) */
+		if (y >= SCREEN_H) y -= 256;
+		if (y >= SCREEN_H || y + h <= 0) continue; /* (off its screen) */
 		gA[ng][0] = a0, gA[ng][1] = a1, gA[ng][2] = GAME_OAM16(i * 8 + 4), gA[ng][3] = (uint16_t) (y + 256), ++ng;
 	}
 	static uint16_t out[128][3];
@@ -388,7 +388,7 @@ static void twin_hide(Twin* tw) {
 			if (gA[i][1] != b1 || gA[i][2] != b2 || (gA[i][0] & 0xFF00) != (b0 & 0xFF00)) continue;
 			int yt = (int) gA[i][3] - 256 + gs - cs; /* where the table puts it on the copy's screen */
 			if (((yt + 256) & 0xFF) == (b0 & 0xFF)) {
-				if (yt < GBA_H && yt + h > 0) table = true;
+				if (yt < SCREEN_H && yt + h > 0) table = true;
 				else fixed = true; /* (wrapped round) */
 			} else if ((gA[i][0] & 0xFF) == (b0 & 0xFF)) {
 				fixed = gFixed[i] = true;
@@ -631,9 +631,9 @@ static void twin_step(void) {
 		 * height is known from the game) */
 		int k = tall_shake(twinProf, &emu);
 		twinShakeNow = twinShakeNext, twinShakeNext = k;
-		int top = tall_top_of(twinProf), vmax = tall_rows_of(twinProf, &emu) - 2 * GBA_H;
+		int top = tall_top_of(twinProf), vmax = tall_rows_of(twinProf, &emu) - 2 * SCREEN_H;
 		int u = tall_view(twinProf, &emu) - k;
-		twins[0].row = vmax, twins[1].row = SDL_max(SDL_min(u, vmax), top) + GBA_H;
+		twins[0].row = vmax, twins[1].row = SDL_max(SDL_min(u, vmax), top) + SCREEN_H;
 		/* (both always: a copy walking to its row from the game's isn't
 		 * shown for a few frames, so the top screen's copy is kept at its
 		 * row while the game itself is there too) */
@@ -663,13 +663,13 @@ static void twin_step(void) {
 	if (twinArmed < 2 || !twin_ball(&emu, S, &ax, &ay)) return;
 	int k = (int8_t) emu_read8(&emu, S + L->shake);
 	twinShakeNow = twinShakeNext, twinShakeNext = k;
-	int u = (int16_t) emu_read16(&emu, L->view) - k, vmax = twinProf->tall.rows - 2 * GBA_H;
-	int want[TWINS] = { vmax, SDL_max(SDL_min(u, vmax), 0) + GBA_H };
+	int u = (int16_t) emu_read16(&emu, L->view) - k, vmax = twinProf->tall.rows - 2 * SCREEN_H;
+	int want[TWINS] = { vmax, SDL_max(SDL_min(u, vmax), 0) + SCREEN_H };
 	/* (PP-11: the game's whole screen is on the bottom one; the top screen
 	 * shows the rows just above it, from twins[0] held there, when the
 	 * table has them) */
-	bool above = tallMsg && u - GBA_H >= 0;
-	if (above) want[0] = u - GBA_H;
+	bool above = tallMsg && u - SCREEN_H >= 0;
+	if (above) want[0] = u - SCREEN_H;
 	for (int i = 0; i < TWINS; ++i) {
 		if (twins[i].row != want[i] && !twins[i].up) twins[i].panStep = 0;
 		twins[i].row = want[i];
@@ -732,7 +732,7 @@ static void twin_open(const char* rom, const MapProfile* p) {
 	}
 	twinProf = p;
 	twinOpen = true;
-	tallTrace = getenv("GBADS_TALL_TRACE") != NULL;
+	tallTrace = getenv("PSXDS_TALL_TRACE") != NULL;
 	fprintf(stderr, "live view: two more copies of the game for the table's other rows\n");
 }
 
@@ -776,7 +776,7 @@ static void run_frame(uint32_t keys) {
 		if (!twinProf->tall.live.carry.keepObj)
 			for (int i = 0; i < TWINS; ++i) if (twins[i].up) twin_hide(&twins[i]);
 		/* (only while a copy's rows are on the top screen this frame) */
-		bool topCopy = tall_view(twinProf, &emu) - tall_shake(twinProf, &emu) > tall_rows_of(twinProf, &emu) - 2 * GBA_H;
+		bool topCopy = tall_view(twinProf, &emu) - tall_shake(twinProf, &emu) > tall_rows_of(twinProf, &emu) - 2 * SCREEN_H;
 		emu_hud_keep_exact(tallFixed, topCopy ? nTallFixed : 0);
 		/* (carry: and left out of the game's picture, which can be on the
 		 * bottom screen) */
@@ -787,7 +787,7 @@ static void run_frame(uint32_t keys) {
 			 * on them, such as the pause menu's arrow) */
 			for (int i = 0; i < nTallFixed; ++i) {
 				int y = tallFixed[i][0] & 0xFF, h = obj_height(tallFixed[i][0], tallFixed[i][1]);
-				if (y >= GBA_H) y -= 256;
+				if (y >= SCREEN_H) y -= 256;
 				if (tallBandY0 >= 0 && y < tallBandY1 + 1 && y + h > tallBandY0) memcpy(tallBandFixed[nTallBandFixed++], tallFixed[i], sizeof(tallFixed[i]));
 			}
 			emu_hud_keep_exact(tallBandFixed, nTallBandFixed);
@@ -911,10 +911,10 @@ static char subCode[5];          /* the profile in use: the game's code, or what
 static const char* dump_text(char* buf, size_t n) {
 	const char* name;
 	switch (profile_dump(emu.gameCode, emu.romCrc, &name)) {
-	case DUMP_TESTED: snprintf(buf, n, "CRC32 %08x, the dump GBA DS is tested on (%s)", emu.romCrc, name); break;
-	case DUMP_OFFICIAL: snprintf(buf, n, "CRC32 %08x, an official dump GBA DS isn't tested on (%s)", emu.romCrc, name); break;
-	case DUMP_MOD_TESTED: snprintf(buf, n, "CRC32 %08x, a mod GBA DS is tested on (%s)", emu.romCrc, name); break;
-	case DUMP_MOD: snprintf(buf, n, "CRC32 %08x, a known mod GBA DS isn't tested on (%s)", emu.romCrc, name); break;
+	case DUMP_TESTED: snprintf(buf, n, "CRC32 %08x, the dump PSX-DS is tested on (%s)", emu.romCrc, name); break;
+	case DUMP_OFFICIAL: snprintf(buf, n, "CRC32 %08x, an official dump PSX-DS isn't tested on (%s)", emu.romCrc, name); break;
+	case DUMP_MOD_TESTED: snprintf(buf, n, "CRC32 %08x, a mod PSX-DS is tested on (%s)", emu.romCrc, name); break;
+	case DUMP_MOD: snprintf(buf, n, "CRC32 %08x, a known mod PSX-DS isn't tested on (%s)", emu.romCrc, name); break;
 	case DUMP_MODIFIED:
 		snprintf(buf, n, "CRC32 %08x, not a known dump of %.4s: modified (a patch or hack), trimmed or a bad dump", emu.romCrc,
 		         emu.gameCode);
@@ -956,24 +956,24 @@ static uint32_t* combatPx; /* its pixels */
 static bool combatInGame; /* (hud.logoUnder) the HUD's first probe matches: in a chapter */
 static SDL_Texture* hudTex[2]; /* the HUD's second screen (HUD_CW x HUD_CH) */
 static SDL_Texture* logoTex[2];
-/* the logo centred in a GBA-sized picture, so it's scaled (and gridded)
+/* the logo centred in a PS1-sized picture, so it's scaled (and gridded)
  * like the game; NULL for a user's high-resolution logo */
 static SDL_Texture* logoCanvasTex[2];
 /* user overlay PNGs: [0] top screen, [1] bottom (load_overlay) */
 static SDL_Texture* overlayTex[2][2];
 static int overlayW[2], overlayH[2];
 static char overlayMode[2][32];
-/* GBA DS's own bezel (draw_bezel, bezel.c): [0] top screen, [1] bottom,
+/* PSX-DS's own bezel (draw_bezel, bezel.c): [0] top screen, [1] bottom,
  * made again when anything it's drawn from changes */
 static SDL_Texture* bezelTex[2][2];
 static int bezelW[2], bezelH[2];
 static char bezelKey[2][96];
 static int logoW, logoH;
 static bool logoPixel;
-static int logoSub = 1; /* logoTex's pixels per GBA pixel (LOGO_SUB: a scraped logo at full resolution) */
+static int logoSub = 1; /* logoTex's pixels per PS1 pixel (LOGO_SUB: a scraped logo at full resolution) */
 static bool logoProvisional; /* a scraped logo sized before the extracted one existed (GEN-11) */
 static MapResult mapRes;
-static int mapW = GBA_W, mapH = GBA_H;
+static int mapW = SCREEN_W, mapH = SCREEN_H;
 static int mapShownIdx = -1;
 /* "Map Animations: Off" shows this composed still instead of mapRes.frames[] */
 #define STILL_IDX MAP_MAX_FRAMES
@@ -986,18 +986,18 @@ static bool mapInactive;
 static bool logoOnly; /* the game has a profile but no map: logo on the second screen */
 static const MapProfile* snapProf; /* logo-only game with screens copied to the second screen */
 static const MapProfile* tallProf; /* logo-only game with a table over both screens (profile.tall) */
-static uint32_t tallTop[GBA_W * GBA_H], tallBot[GBA_W * GBA_H];
+static uint32_t tallTop[SCREEN_W * SCREEN_H], tallBot[SCREEN_W * SCREEN_H];
 static bool tallLiveAtStart; /* pinball_live as this game started with it: a change counts only after a new start */
 static bool tallLive;      /* the live view: the table over both screens (update_tall) */
 /* Mario Kart: the race HUD on the second screen (profile .hud) */
 static const MapProfile* hudProf;
-static uint32_t hudPx[GBA_W * GBA_H];
+static uint32_t hudPx[SCREEN_W * SCREEN_H];
 static bool hudOn; /* the frame being emulated is split */
 /* the second screen's picture: the HUD at 2x over the backdrop, its map
  * larger; the backdrop, made from the grabbed layers as each race starts */
-#define HUD_CW (GBA_W * 2)
-#define HUD_CH (GBA_H * 2)
-static uint32_t hudCanvas[HUD_CW * HUD_CH], hudBack[HUD_CW * HUD_CH], hudGrab[GBA_W * GBA_H];
+#define HUD_CW (SCREEN_W * 2)
+#define HUD_CH (SCREEN_H * 2)
+static uint32_t hudCanvas[HUD_CW * HUD_CH], hudBack[HUD_CW * HUD_CH], hudGrab[SCREEN_W * SCREEN_H];
 static bool hudBackValid;
 static int hudFrames; /* split frames since the race (re)started */
 static int mapX0, mapY0, mapX1, mapY1; /* the map's box on the HUD, measured over the first frames */
@@ -1015,9 +1015,9 @@ static int cardScore = -1; /* hud.card: how far off centre the best take so far 
  * then), and how long its start has been seen / not seen */
 static bool cardTaken;
 static int cardPreFor, cardAway = 1000;
-static uint32_t cardBest[GBA_W * GBA_H];
+static uint32_t cardBest[SCREEN_W * SCREEN_H];
 static int sideScore = -1; /* hud.card.side: how far off centre its best take is (-1: none) */
-static uint32_t sideBest[GBA_W * GBA_H];
+static uint32_t sideBest[SCREEN_W * SCREEN_H];
 static bool hudAlt; /* the HUD on its other layer (hud.alt: SMA2's boss rooms) */
 static bool hudOffLatch; /* hud.offAfter has matched: off till on[0] stops matching */
 static uint32_t hudLogoBack[HUD_CW * HUD_CH];
@@ -1039,10 +1039,10 @@ static bool overAlone; /* a piece that goes alone is in the map picture (shown e
 typedef struct {
 	bool valid;
 	int w, h;
-	uint32_t px[GBA_W * GBA_H];
+	uint32_t px[SCREEN_W * SCREEN_H];
 	uint32_t key;
 	int cw, ch, cx, cy, still; /* a latched piece's size and place (a settling one's size), and for how long */
-	uint32_t cand[GBA_W * GBA_H]; /* a settling piece's pixels */
+	uint32_t cand[SCREEN_W * SCREEN_H]; /* a settling piece's pixels */
 	int gone; /* frames missing while the HUD's on (HudMove.dropAfter) */
 	bool stale; /* a state was loaded: taken again (latched or not) as soon as it holds still */
 	int sx, sy; /* where it was on the game screen (its top left) */
@@ -1059,11 +1059,11 @@ static bool cardLogoMade; /* card_logo's picture is made */
 static uint32_t hudLogoBelow[HUD_CW * HUD_CH]; /* profile hud.logoBelow: dark grey, the logo below the HUD */
 /* profile hud.mapTitleRows: those rows of the last map picture, held over
  * the HUD (mapTitleN rows; 0: none taken yet) */
-static uint32_t mapTitle[GBA_W * 32];
+static uint32_t mapTitle[SCREEN_W * 32];
 static int mapTitleN;
 static bool hudLogoBelowDone;
 static int snapShow, snapRevert;   /* consecutive frames matching show / a revert screen */
-static uint32_t snapShown[GBA_W * GBA_H]; /* the copy on the second screen (kept with save states) */
+static uint32_t snapShown[SCREEN_W * SCREEN_H]; /* the copy on the second screen (kept with save states) */
 
 static uint64_t mapAnimStart;
 /* which of the map's frames shows now (they turn every frameStep frames
@@ -1078,7 +1078,7 @@ static double fps, speedPct;
 static Uint64 emuTicks, drawTicks; /* time spent emulating / drawing, for the 5 s report */
 
 /* Slow frames (work over a frame's time): the worst each second, broken down,
- * logged on Android (where frame time is tight) or with GBADS_DEBUG. */
+ * logged on Android (where frame time is tight) or with PSXDS_DEBUG. */
 typedef struct {
 	double total, input, emulate, ra, map, draw, top, bottom;
 	int redraws;
@@ -1094,7 +1094,7 @@ static SlowFrame slowWorst;
 static int slowCount;
 
 /* Stalls (issue #50): a loop iteration over STALL_MS from top to top, any
- * build, no GBADS_DEBUG needed. Each part of the iteration is timed, the
+ * build, no PSXDS_DEBUG needed. Each part of the iteration is timed, the
  * wait before the frame and the sleep after it included (slow frames above
  * only see the work in between), so one line in a player's log says where
  * the time went. At most STALL_LINES lines per 5 s; the 5 s report counts
@@ -1150,7 +1150,7 @@ enum MenuItem { M_RESUME, M_CHEATS, M_PATCHES, M_ACH, M_SHOT, M_SWAP, M_SCALE, M
 static const char* menuLabels[] = {
 	/* title case: drawn in Futura from the built-in images (tools/make_brand.py) */
 	[M_RESUME] = N_("Resume"), [M_SWAP] = N_("Swap Screens"), [M_SAVE] = N_("Save State"), [M_SCALE] = "", [M_LCD] = "", [M_FPS] = "", [M_FRAMEBUF] = "", [M_OVERLAY] = "", [M_LOGO] = "", [M_MATCH] = "", [M_REWIND] = "", [M_RESTART] = N_("Restart Game"),
-	[M_LOAD] = N_("Load State"), [M_CHEATS] = "Cheats", [M_PATCHES] = "Patches", [M_BUTTONS] = N_("Buttons"), [M_ACH] = "Achievements", [M_SHOT] = N_("Take Screenshot"), [M_LIBRARY] = N_("Close Game"), [M_EXIT] = N_("Close GBA DS"),
+	[M_LOAD] = N_("Load State"), [M_CHEATS] = "Cheats", [M_PATCHES] = "Patches", [M_BUTTONS] = N_("Buttons"), [M_ACH] = "Achievements", [M_SHOT] = N_("Take Screenshot"), [M_LIBRARY] = N_("Close Game"), [M_EXIT] = N_("Close PSX-DS"),
 	[M_AUTOSAVE] = "", [M_AUTOLOAD] = "", [M_BUG] = N_("Submit a Bug Report"), [M_SLOT] = "", [M_FF] = "", [M_COLOR] = "", [M_GHOST] = "", [M_PIXLOGO] = "", [M_PLACE] = "",
 };
 static int menuItems[12], nMenuItems;
@@ -1161,7 +1161,7 @@ static bool half_item(int item) {
 	return item == M_RESUME || item == M_RESTART || item == M_SAVE || item == M_LOAD || item == M_AUTOSAVE || item == M_AUTOLOAD || item == M_REWIND || item == M_FF ||
 	       item == M_COLOR || item == M_GHOST || item == M_CHEATS || item == M_PATCHES || item == M_SHOT || item == M_BUG;
 }
-/* Close Game and Close GBA DS are double height: two rows tall, side by side
+/* Close Game and Close PSX-DS are double height: two rows tall, side by side
  * when both are there, else the one across the whole row */
 static bool tall_item(int item) {
 	return item == M_LIBRARY || item == M_EXIT;
@@ -1221,7 +1221,7 @@ static void suppress_held(void) {
 	for (int b = 0; b < B_COUNT; ++b) suppress[b] = btnNow[b];
 }
 static const char* pageNames[N_PAGES] = { "Game", N_("Display"), "Screens", "Controls", N_("Speed"), N_("Map")};
-/* Restart Game, Close Game and Close GBA DS ask first: chosen once, the
+/* Restart Game, Close Game and Close PSX-DS ask first: chosen once, the
  * button says "Are You Sure?" (and the note what happens); chosen again,
  * it's done. Another page, another button or closing the menu calls it off. */
 static int armedItem = -1;
@@ -1235,7 +1235,7 @@ static int menuSel;
 static int menuPressed = -1;      /* item under a finger that went down in the menu */
 static bool ignorePointerUp;      /* the tap that opened the menu */
 static char menuNote[64];
-static bool pacedFallback; /* Match Display Rate fell back to the GBA's rate (pacing_update) */
+static bool pacedFallback; /* Match Display Rate fell back to the PS1's rate (pacing_update) */
 
 #define C_BTN ui_accent_color(AC_BTN)
 #define C_BTN_SEL ui_accent_color(AC_BTN_SEL)
@@ -1252,7 +1252,7 @@ static SDL_Rect ach_area(int scr);
  * widest fits (item_label gives the current one). */
 static const char* const allLabels[] = {
 	N_("Resume"), N_("Restart Game"), N_("Are You Sure?"), N_("Save State"), N_("Load State"), "Cheats", "Patches", "Achievements",
-	N_("Take Screenshot"), N_("Close Game"), N_("Close GBA DS"), N_("Submit a Bug Report"),
+	N_("Take Screenshot"), N_("Close Game"), N_("Close PSX-DS"), N_("Submit a Bug Report"),
 	"\u2039   Slot 0: Sep 30, 12:59 PM   \u203A", /* (the slot row, with its arrows) */
 };
 /* the labels of the half-width buttons, which fit in half the width */
@@ -1335,21 +1335,21 @@ static void slot_pick_newest(void) {
 }
 /* What's in a slot shared with RetroArch (issue #39), looked at again
  * only when the file changes */
-static StateFileKind slot_kind(const struct stat* st, bool* fromGbads) {
+static StateFileKind slot_kind(const struct stat* st, bool* fromPsxds) {
 	static struct {
 		char path[1024];
 		time_t time;
 		off_t size;
 		StateFileKind kind;
-		bool gbads;
+		bool psxds;
 	} seen[10];
 	int i = stateSlot;
 	if (strcmp(seen[i].path, gp.slot[i]) || seen[i].time != st->st_mtime || seen[i].size != st->st_size) {
 		snprintf(seen[i].path, sizeof(seen[i].path), "%s", gp.slot[i]);
 		seen[i].time = st->st_mtime, seen[i].size = st->st_size;
-		seen[i].kind = emu_state_file_kind(&emu, gp.slot[i], &seen[i].gbads);
+		seen[i].kind = emu_state_file_kind(&emu, gp.slot[i], &seen[i].psxds);
 	}
-	*fromGbads = seen[i].gbads;
+	*fromPsxds = seen[i].psxds;
 	return seen[i].kind;
 }
 /* "Slot 3: Oct 31, 1:45 PM" (when it was saved), or "Slot 3: Empty";
@@ -1364,13 +1364,13 @@ static const char* slot_label(void) {
 	}
 	const char* by = "";
 	if (gp.raDir[0]) {
-		bool fromGbads;
-		StateFileKind k = slot_kind(&st, &fromGbads);
+		bool fromPsxds;
+		StateFileKind k = slot_kind(&st, &fromPsxds);
 		if (k == STATE_FILE_OTHER_CORE || k == STATE_FILE_UNREADABLE) {
 			snprintf(buf, sizeof(buf), tr("Slot %d: %s"), stateSlot, k == STATE_FILE_OTHER_CORE ? tr("Another emulator's"): tr("Can't be read"));
 			return buf;
 		}
-		if (!fromGbads) by = N_(", RetroArch");
+		if (!fromPsxds) by = N_(", RetroArch");
 	}
 	struct tm t, now;
 	time_t n = time(NULL);
@@ -1598,7 +1598,7 @@ typedef struct {
 	bool usable;       /* applies to this ROM on its own */
 	ByteRange* ranges; /* (usable) the bytes it changes */
 	int nRanges;
-	/* a patch GBA DS knows (docs/patches.md): the ROMs it's made for, and
+	/* a patch PSX-DS knows (docs/patches.md): the ROMs it's made for, and
 	 * what to say when it goes on one of them (an optional patch: on
 	 * another patch's result, found when they're tried together) */
 	const KnownPatch* known;
@@ -1753,7 +1753,7 @@ static void patch_describe(const uint8_t* rom, size_t romN, uint32_t romCrc, con
 		snprintf(pi->note, sizeof(pi->note), tr("Made for another version of the game: it can't be switched on for this ROM"));
 	} else if (r != PATCH_APPLIED && compressed) {
 		snprintf(pi->note, sizeof(pi->note),
-		         tr("An xdelta made with compression, which GBA DS can't read: patch the ROM with it beforehand, or make it again without (xdelta3 -S none)"));
+		         tr("An xdelta made with compression, which PSX-DS can't read: patch the ROM with it beforehand, or make it again without (xdelta3 -S none)"));
 	} else if (r != PATCH_APPLIED) {
 		snprintf(pi->note, sizeof(pi->note), tr("Can't be read: not a patch, or damaged"));
 	} else if (pi->known && !pi->baseOk) {
@@ -2507,7 +2507,7 @@ static void draw_battery(void) {
  * Swiping up from the bottom of the touchscreen brings up a bar along its
  * bottom, over whatever it shows, without pausing: the time, the battery
  * and the frames a second, then icon buttons: Save State, Load State,
- * Settings (the pause menu), Bug Report (bug_report) and Close GBA DS
+ * Settings (the pause menu), Bug Report (bug_report) and Close PSX-DS
  * (tapped twice). In games with another button layout, Controls above.
  * Swiping down, the pause menu opening or 5 seconds untouched put it
  * away. Greys only, to sit over any game's colours. */
@@ -2516,7 +2516,7 @@ static float barShown;          /* 0 hidden .. 1 all the way up (sliding) */
 static Uint32 barSince;         /* last touched */
 static Uint32 barLitAt;         /* a button's action just done: it shows white a moment */
 static int barLit = -1;
-static Uint32 barExitArmed;     /* Close GBA DS tapped once (a second tap within 3 s closes) */
+static Uint32 barExitArmed;     /* Close PSX-DS tapped once (a second tap within 3 s closes) */
 enum { G_NONE, G_TRACK, G_DONE, G_BTN, G_PIN };
 static int barGesture = G_NONE;
 static int barBtn = -1;         /* the button under the finger (G_BTN) */
@@ -2936,11 +2936,11 @@ static const char* const shaderLabels[SH_COUNT] = {
 };
 static const char* const shaderNotes[SH_COUNT] = {
 	N_("The game's pixels as they are"),
-	N_("Lines between the pixels, like a GBA's screen"),
+	N_("Lines between the pixels, like an LCD screen"),
 	N_("A dark line under each row of pixels"),
 	N_("Each pixel a little darker toward its edges"),
 	N_("Red, green and blue stripes, gentle: for dim screens"),
-	N_("Red, green and blue stripes, like a GBA's screen"),
+	N_("Red, green and blue stripes, like an LCD screen"),
 	N_("Red, green and blue stripes, strong: for bright screens"),
 };
 static const char* shader_label(int sh) {
@@ -2948,7 +2948,7 @@ static const char* shader_label(int sh) {
 }
 /* Display > LCD Ghosting: the game's last frame (as the emulator drew it),
  * to show each frame half and half with it */
-static uint32_t ghostPrev[GBA_W * GBA_H], ghostOut[GBA_W * GBA_H];
+static uint32_t ghostPrev[SCREEN_W * SCREEN_H], ghostOut[SCREEN_W * SCREEN_H];
 static bool ghostHave;
 static uint64_t ghostFrame;
 static const uint32_t* ghost_frame(const uint32_t* fb) {
@@ -2958,8 +2958,8 @@ static const uint32_t* ghost_frame(const uint32_t* fb) {
 		ghostHave = true;
 	}
 	/* half this frame, half the one before: a sprite the game flickers
-	 * every other frame shows half see-through, as on the GBA's slow LCD */
-	for (int i = 0; i < GBA_W * GBA_H; ++i) {
+	 * every other frame shows half see-through, as on the PS1's slow LCD */
+	for (int i = 0; i < SCREEN_W * SCREEN_H; ++i) {
 		uint32_t a = fb[i], b = ghostPrev[i];
 		ghostOut[i] = (a | b) - (((a ^ b) & 0xFEFEFEFEu) >> 1); /* the rounded-up average of each byte */
 		ghostPrev[i] = a;
@@ -3002,7 +3002,7 @@ static const char* ovl_row_label(int row) {
 	switch (row) {
 	case OR_MODE: return modes[SDL_clamp(cfg->overlayMode, 0, 2)];
 	case OR_SCREENS: return cfg->overlays == OVL_TOP ? N_("Which Screen: Top Only"): cfg->overlays == OVL_BOTTOM ? N_("Which Screen: Bottom Only"): N_("Which Screen: Both");
-	case OR_LOGO: return cfg->bezelLogo ? N_("GBA DS Logo: Show"): N_("GBA DS Logo: Hide");
+	case OR_LOGO: return cfg->bezelLogo ? N_("PSX-DS Logo: Show"): N_("PSX-DS Logo: Hide");
 	case OR_INNER: return N_("Inner Bezel Color");
 	case OR_OUTER: return N_("Outer Bezel Color");
 	default: return N_("Reset Bezels");
@@ -3266,7 +3266,7 @@ static void draw_ovl_menu(int scr) {
 	if (cfg->overlayMode == OVM_CUSTOM) {
 		SDL_Rect last = ovl_row_rect(scr, n - 1);
 		ui_font_wrap(scr, TF_BODY, mg.margin + mg.pad, last.y + last.h + mg.gap * 2, mg.w - mg.pad * 2, mg.noteCap,
-		             "Your own PNGs in gba-ds/overlays/. A screen without one gets the generated bezel in its default colors.", C_DIS);
+		             "Your own PNGs in psx-ds/overlays/. A screen without one gets the generated bezel in its default colors.", C_DIS);
 	}
 }
 
@@ -3385,20 +3385,20 @@ static void ovl_close_all(void) {
 
 /* ---------------------------------------------------------------- face buttons
  *
- * GEN-10: which GBA button each face button gives the game, by position
- * (right, bottom, top, left): GBA A / B / L / R, Start, Select, Turbo A /
+ * GEN-10: which PS1 button each face button gives the game, by position
+ * (right, bottom, top, left): PS1 A / B / L / R, Start, Select, Turbo A /
  * Turbo B or nothing. Controls > the four button rows (button_right ... in
- * gba-ds.cfg, for this game or for all games); with none chosen, ab_swap's
+ * psx-ds.cfg, for this game or for all games); with none chosen, ab_swap's
  * layout. Before v1.5.4 a game's choices were kept in <game>.buttons: read
  * once into the game's own settings (fb_load). Only the game's keys change
- * (run loop, the GBA layout's branch): GBA DS's own screens keep B_A / B_B.
+ * (run loop, the PS1 layout's branch): PSX-DS's own screens keep B_A / B_B.
  * In games with a layout picker (profile `controls`), the SNES / four-button
  * layout decides the face buttons wherever it's in use. */
 enum { FB_RIGHT, FB_BOTTOM, FB_TOP, FB_LEFT, FB_FACES, FB_L = FB_FACES, FB_R, FB_UP, FB_DOWN, FB_PADLEFT, FB_PADRIGHT, FB_COUNT };
 enum { FG_A, FG_B, FG_L, FG_R, FG_UP, FG_DOWN, FG_LEFT, FG_RIGHT, FG_START, FG_SELECT, FG_TURBO_A, FG_TURBO_B, FG_NONE, FG_COUNT };
 static const char* const fbNames[FB_COUNT] = { "right", "bottom", "top", "left", "l", "r", "dpad_up", "dpad_down", "dpad_left", "dpad_right" };
 static const char* const fgNames[FG_COUNT] = { "a", "b", "l", "r", "up", "down", "left", "right", "start", "select", "turbo_a", "turbo_b", "none" };
-static const char* const fgLabels[FG_COUNT] = { "GBA A", "GBA B", "GBA L", "GBA R", "GBA Up", "GBA Down", "GBA Left", "GBA Right", "Start", "Select", "Turbo A", "Turbo B", "Nothing" };
+static const char* const fgLabels[FG_COUNT] = { "PS1 Circle", "PS1 Cross", "PS1 L1", "PS1 R1", "PS1 Up", "PS1 Down", "PS1 Left", "PS1 Right", "Start", "Select", "Turbo A", "Turbo B", "Nothing" };
 static int fbMap[FB_COUNT]; /* each face button's FG_ */
 static bool fbSet;          /* a choice in force (else ab_swap's) */
 
@@ -3414,7 +3414,7 @@ static void fb_default(void) {
 			if (!strcmp(cfg->faceBtn[i], fgNames[j])) fbMap[i] = j, fbSet = true;
 }
 
-/* "right GBA A, bottom GBA B, ..." for the log and bug reports */
+/* "right PS1 A, bottom PS1 B, ..." for the log and bug reports */
 static const char* fb_describe(void) {
 	static char s[320];
 	s[0] = 0;
@@ -3455,7 +3455,7 @@ static void fb_load(void) {
 	if (fbSet) fprintf(stderr, "buttons: %s\n", fb_describe());
 }
 
-/* the GBA keys the face buttons give the game (the GBA layout) */
+/* the PS1 keys the face buttons give the game (the PS1 layout) */
 static uint32_t fb_keys(bool faces) {
 	static const uint32_t key[FG_COUNT] = { K_A, K_B, K_L, K_R, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_START, K_SELECT, K_A, K_B, 0 };
 	/* Turbo A / B (#55): the key goes down and up turbo_rate times a second (60 frames a second) */
@@ -3579,7 +3579,7 @@ static void draw_rows_page(int scr, const MenuGeom* mg) {
 			rowTagOn[i] = true;
 		}
 		if (!strcmp(key, "pinball_live") && cfg->tallLive != tallLiveAtStart) {
-			/* changed since GBA DS started: it only counts once GBA DS is closed and started again */
+			/* changed since PSX-DS started: it only counts once PSX-DS is closed and started again */
 			int tc = SDL_max(6, cap * 5 / 8), gp2 = mg->pad / 2;
 			int px0 = r.x + mg->pad + lw + gp2 + (has ? ui_font_width(TF_BOLD, tc, "Game") + mg->pad + gp2 : 0);
 			const char* txt = N_("Restart required");
@@ -3848,7 +3848,7 @@ static void draw_menu(void) {
 		int lc = cap;
 		if (tall_item(menuItems[i])) {
 			/* double height: the text as big as the button and its widest label allow */
-			static const char* const tallLabels[] = { "Close Game", "Close GBA DS", "Are You Sure?" };
+			static const char* const tallLabels[] = { "Close Game", "Close PSX-DS", "Are You Sure?" };
 			int widest = 1;
 			for (size_t k = 0; k < sizeof(tallLabels) / sizeof(*tallLabels); ++k) widest = SDL_max(widest, ui_label_width(scr, 100, tallLabels[k]));
 			lc = SDL_min(r.h * 2 / 5, (r.w - mg.pad * 2) * 100 / widest);
@@ -3859,7 +3859,7 @@ static void draw_menu(void) {
 		int lastRow = SDL_min(nMenuRows, ROW_VIS) - 1;
 		SDL_Rect last = { 0, mg.top + lastRow * (mg.h + mg.gap), 0, mg.h };
 		int nc = SDL_min(mg.noteCap, mg.noteCap * mg.w / SDL_max(1, ui_font_width(TF_BOLD, mg.noteCap, menuNote)));
-		/* (the last item is always a whole row: Close GBA DS, Show FPS...) */
+		/* (the last item is always a whole row: Close PSX-DS, Show FPS...) */
 		ui_font_text(scr, TF_BOLD, screens[scr].rect.w / 2, last.y + last.h + mg.h * 3 / 5, nc, menuNote, C_GOLD, 0);
 	}
 	if (nScreens > 1) {
@@ -3873,7 +3873,7 @@ static void draw_menu(void) {
 static int probes_hit(const uint32_t* fb, const Probe* p, int tol) {
 	int n = 0;
 	for (int i = 0; i < 8 && (p[i].x || p[i].y || p[i].rgb); ++i) {
-		uint32_t c = fb[p[i].y * GBA_W + p[i].x];
+		uint32_t c = fb[p[i].y * SCREEN_W + p[i].x];
 		int dr = (int) (c & 0xFF) - (int) ((p[i].rgb >> 16) & 0xFF);
 		int dg = (int) ((c >> 8) & 0xFF) - (int) ((p[i].rgb >> 8) & 0xFF);
 		int db = (int) ((c >> 16) & 0xFF) - (int) (p[i].rgb & 0xFF);
@@ -3894,7 +3894,7 @@ static void snapshot_hiding_sprites(const SpriteRule* hide, int n, const SpriteR
 static void snapshot_hiding_sprites_poke(const SpriteRule* hide, int n, const SpriteRule* kept, int nKept, uint32_t* out, uint32_t pokeAt, uint16_t pokeV) {
 	static void* st;
 	static size_t stSize;
-	static uint32_t raw[GBA_W * GBA_H];
+	static uint32_t raw[SCREEN_W * SCREEN_H];
 	size_t sz = emu_state_size(&emu);
 	if (sz > stSize) {
 		free(st);
@@ -3930,8 +3930,8 @@ static bool frame_is_dark(const uint32_t* fb);
 /* One colour all over, nearly: a fade to black or to white, a blank screen. */
 static bool frame_is_flat(const uint32_t* fb) {
 	long sum = 0, n = 0;
-	static int l[GBA_W * GBA_H / 7 + 1];
-	for (int i = 0; i < GBA_W * GBA_H; i += 7) {
+	static int l[SCREEN_W * SCREEN_H / 7 + 1];
+	for (int i = 0; i < SCREEN_W * SCREEN_H; i += 7) {
 		uint32_t c = fb[i];
 		l[n] = (int) ((c & 0xFF) + ((c >> 8) & 0xFF) + ((c >> 16) & 0xFF));
 		sum += l[n++];
@@ -3990,21 +3990,21 @@ static uint32_t map_tiles_sum(int bg) {
 }
 
 static void hud_make_backdrop(void) {
-	int h = SDL_clamp(hudProf->hud.backdropRows ? hudProf->hud.backdropRows : GBA_H, 1, GBA_H);
+	int h = SDL_clamp(hudProf->hud.backdropRows ? hudProf->hud.backdropRows : SCREEN_H, 1, SCREEN_H);
 	if (hudProf->hud.mapCnt) {
 		/* a map layer taken mid-fade, or with the camera on the sky, makes
 		 * a poor picture: try again in half a second, until it's mostly
 		 * there and not dark (then it stays) */
 		uint32_t clear = emu_hud_clear();
 		long drawn = 0, luma = 0;
-		for (int i = 0; i < GBA_W * GBA_H; ++i) {
+		for (int i = 0; i < SCREEN_W * SCREEN_H; ++i) {
 			uint32_t c = hudGrab[i];
 			if ((c & 0xFFFFFF) == clear) continue;
 			++drawn;
 			luma += (c & 0xFF) + ((c >> 8) & 0xFF) + ((c >> 16) & 0xFF);
 		}
 		long level = luma / SDL_max(drawn, 1) / 3;
-		bool good = drawn > GBA_W * GBA_H / 2 && level > 60 && !frame_is_flat(hudGrab);
+		bool good = drawn > SCREEN_W * SCREEN_H / 2 && level > 60 && !frame_is_flat(hudGrab);
 		/* after a fade, only once the brightness has stopped rising */
 		static long lastLevel;
 		if (hudSettle && good && labs(level - lastLevel) > 3) good = false;
@@ -4012,7 +4012,7 @@ static void hud_make_backdrop(void) {
 		hudSettle = !good; /* (a poor take: the next must also hold steady) */
 		hudRegrab = good ? 0 : hudFrames + (hudSettle ? 5 : 30);
 		if (debug) fprintf(stderr, "frame %llu: backdrop taken: %ld%% drawn, brightness %ld%s\n", (unsigned long long) frameCount,
-		                   drawn * 100 / (GBA_W * GBA_H), luma / SDL_max(drawn, 1) / 3, good ? "" : " (again later)");
+		                   drawn * 100 / (SCREEN_W * SCREEN_H), luma / SDL_max(drawn, 1) / 3, good ? "" : " (again later)");
 		if (!good) return; /* keep the last good one meanwhile (or none: black) */
 	}
 	if (!hudBackValid && hudFadeEff) hudFadeIn = 16; /* (after a fade out) */
@@ -4021,29 +4021,29 @@ static void hud_make_backdrop(void) {
 	if (debug) {
 		char path[1200];
 		snprintf(path, sizeof(path), "%s/hud-backdrop.bmp", cfg->stateDir);
-		SDL_Surface* bs = SDL_CreateRGBSurfaceWithFormatFrom(hudGrab, GBA_W, GBA_H, 32, GBA_W * 4, SDL_PIXELFORMAT_XBGR8888);
+		SDL_Surface* bs = SDL_CreateRGBSurfaceWithFormatFrom(hudGrab, SCREEN_W, SCREEN_H, 32, SCREEN_W * 4, SDL_PIXELFORMAT_XBGR8888);
 		if (bs) SDL_SaveBMP(bs, path), SDL_FreeSurface(bs);
 		fprintf(stderr, "frame %llu: backdrop from %d rows (%s)\n", (unsigned long long) frameCount, h, path);
 	}
 	if (!hudBackValid) return;
 	/* where the layers drew nothing: black, not the 'nothing here' colour */
 	uint32_t clear = emu_hud_clear();
-	for (int i = 0; i < GBA_W * GBA_H; ++i) {
+	for (int i = 0; i < SCREEN_W * SCREEN_H; ++i) {
 		if ((hudGrab[i] & 0xFFFFFF) == clear) hudGrab[i] = 0xFF000000;
 	}
 	bool grey = hudProf->hud.backdropGrey;
-	float sc = SDL_max((float) HUD_CW / GBA_W, (float) HUD_CH / h);
-	float ox = (GBA_W - HUD_CW / sc) / 2, oy = (h - HUD_CH / sc) / 2;
+	float sc = SDL_max((float) HUD_CW / SCREEN_W, (float) HUD_CH / h);
+	float ox = (SCREEN_W - HUD_CW / sc) / 2, oy = (h - HUD_CH / sc) / 2;
 	for (int y = 0; y < HUD_CH; ++y) {
 		float fy = oy + (y + 0.5f) / sc - 0.5f;
 		int y0 = SDL_clamp((int) fy, 0, h - 1), y1 = SDL_min(y0 + 1, h - 1);
 		float wy = SDL_clamp(fy - y0, 0.0f, 1.0f);
 		for (int x = 0; x < HUD_CW; ++x) {
 			float fx = ox + (x + 0.5f) / sc - 0.5f;
-			int x0 = SDL_clamp((int) fx, 0, GBA_W - 1), x1 = SDL_min(x0 + 1, GBA_W - 1);
+			int x0 = SDL_clamp((int) fx, 0, SCREEN_W - 1), x1 = SDL_min(x0 + 1, SCREEN_W - 1);
 			float wx = SDL_clamp(fx - x0, 0.0f, 1.0f);
-			uint32_t a = hudGrab[y0 * GBA_W + x0], b = hudGrab[y0 * GBA_W + x1];
-			uint32_t c = hudGrab[y1 * GBA_W + x0], d = hudGrab[y1 * GBA_W + x1];
+			uint32_t a = hudGrab[y0 * SCREEN_W + x0], b = hudGrab[y0 * SCREEN_W + x1];
+			uint32_t c = hudGrab[y1 * SCREEN_W + x0], d = hudGrab[y1 * SCREEN_W + x1];
 			uint32_t out = 0xFF000000;
 			for (int sh = 0; sh < 24; sh += 8) {
 				float top = ((a >> sh) & 0xFF) * (1 - wx) + ((b >> sh) & 0xFF) * wx;
@@ -4074,11 +4074,11 @@ static void hud_make_logo_back(void) {
 /* Profile hud.logoBelow: the logo as on any other second screen (GEN-1),
  * centred, kept below the HUD's rows. */
 /* hud.held: the picture kept from the game screen (heldN rows: none) */
-static uint32_t heldPic[GBA_W * GBA_H];
+static uint32_t heldPic[SCREEN_W * SCREEN_H];
 static int heldN;
 static bool heldArmed = true; /* (taken once each time it's shown) */
 /* hud.held.over: the number from the last capture since then (w 0: none) */
-static uint32_t heldNum[GBA_W * GBA_H];
+static uint32_t heldNum[SCREEN_W * SCREEN_H];
 static int heldNumW, heldNumH;
 static void hud_make_logo_below(void) {
 	hudLogoBelowDone = true;
@@ -4086,10 +4086,10 @@ static void hud_make_logo_below(void) {
 	const typeof(hudProf->hud.held)* hp = &hudProf->hud.held;
 	if (hp->y1 && heldN > 0) {
 		/* (hud.held: the kept picture instead of the logo, at its own size) */
-		for (int y = 0; y < heldN && hp->at + y < GBA_H; ++y) {
-			for (int x = 0; x < GBA_W; ++x) {
+		for (int y = 0; y < heldN && hp->at + y < SCREEN_H; ++y) {
+			for (int x = 0; x < SCREEN_W; ++x) {
 				uint32_t* o = &hudLogoBelow[(hp->at + y) * 2 * HUD_CW + x * 2];
-				o[0] = o[1] = o[HUD_CW] = o[HUD_CW + 1] = heldPic[y * GBA_W + x] | 0xFF000000;
+				o[0] = o[1] = o[HUD_CW] = o[HUD_CW + 1] = heldPic[y * SCREEN_W + x] | 0xFF000000;
 			}
 		}
 		/* (hud.held.over: the number from the capture over its own) */
@@ -4100,7 +4100,7 @@ static void hud_make_logo_below(void) {
 			for (int gy = ov->y0; gy <= ov->y1; ++gy) {
 				for (int gx = ov->x0; gx <= ov->x1; ++gx) {
 					int y = gy - hp->y0 + hp->at;
-					if (gy < hp->y0 || y < 0 || y >= GBA_H || gx < 0 || gx >= GBA_W) continue;
+					if (gy < hp->y0 || y < 0 || y >= SCREEN_H || gx < 0 || gx >= SCREEN_W) continue;
 					uint32_t c = fill;
 					int sx = gx - (ov->x1 - heldNumW + 1), sy = gy - ov->y0;
 					if (sx >= 0 && sx < heldNumW && sy >= 0 && sy < heldNumH && (heldNum[sy * heldNumW + sx] & 0xFFFFFF) != key)
@@ -4115,12 +4115,12 @@ static void hud_make_logo_below(void) {
 	int top = 0; /* below the HUD: its lowest row on the canvas */
 	for (int m = 0; m < HUD_MOVES; ++m) {
 		const HudMove* mv = &hudProf->hud.moves[m];
-		if (mv->toGame && !mv->how && !mv->vhow && mv->x0 == 0 && mv->x1 >= GBA_W - 1 && mv->y0 > 0) top = mv->y0 * 2;
+		if (mv->toGame && !mv->how && !mv->vhow && mv->x0 == 0 && mv->x1 >= SCREEN_W - 1 && mv->y0 > 0) top = mv->y0 * 2;
 	}
 	if (hudProf->hud.rows) top = hudProf->hud.rows * 2;
 	if (hudProf->hud.logoTop) top = hudProf->hud.logoTop * 2;
 	if (hudProf->hud.mapTitleRows && mapTitleN) top += (mapTitleN + 2) * 2; /* (and the level's name above it) */
-	logo_draw(hudLogoBelow, HUD_CW, HUD_CH, HUD_CW / GBA_W, top, 255);
+	logo_draw(hudLogoBelow, HUD_CW, HUD_CH, HUD_CW / SCREEN_W, top, 255);
 }
 
 static int rule_count(const SpriteRule* r, int max) {
@@ -4161,17 +4161,17 @@ static bool oam_has_tile_pal(int tile, int tileMax, int pal, int prio1) {
 static bool card_take(void) {
 	const typeof(hudProf->hud.card)* c = &hudProf->hud.card;
 	uint32_t clear = emu_hud_clear();
-	int lo = GBA_W, hi = -1;
-	for (int y = SDL_max(c->y0, 0); y <= SDL_min(c->y1, GBA_H - 1); ++y) {
-		for (int x = 0; x < GBA_W; ++x) {
-			uint32_t p = hudPx[y * GBA_W + x];
+	int lo = SCREEN_W, hi = -1;
+	for (int y = SDL_max(c->y0, 0); y <= SDL_min(c->y1, SCREEN_H - 1); ++y) {
+		for (int x = 0; x < SCREEN_W; ++x) {
+			uint32_t p = hudPx[y * SCREEN_W + x];
 			if ((p & 0xFFFFFF) == clear) continue;
 			int luma = (p & 0xFF) + ((p >> 8) & 0xFF) + ((p >> 16) & 0xFF);
 			if (luma < 3 * 96) lo = SDL_min(lo, x), hi = SDL_max(hi, x);
 		}
 	}
-	if (hi < 0 || lo < 2 || hi > GBA_W - 3) return false;
-	int off = abs(lo - (GBA_W - 1 - hi));
+	if (hi < 0 || lo < 2 || hi > SCREEN_W - 3) return false;
+	int off = abs(lo - (SCREEN_W - 1 - hi));
 	if (cardScore < 0 || off < cardScore) {
 		cardScore = off;
 		memcpy(cardBest, hudPx, sizeof(cardBest));
@@ -4185,9 +4185,9 @@ static bool side_take(void) {
 	const int* r = hudProf->hud.card.side;
 	uint32_t clear = emu_hud_clear();
 	int top = -1, bot = -1;
-	for (int y = SDL_max(r[1], 0); y <= SDL_min(r[3], GBA_H - 1); ++y) {
-		for (int x = SDL_max(r[0], 0); x <= SDL_min(r[2], GBA_W - 1); ++x) {
-			uint32_t p = hudPx[y * GBA_W + x];
+	for (int y = SDL_max(r[1], 0); y <= SDL_min(r[3], SCREEN_H - 1); ++y) {
+		for (int x = SDL_max(r[0], 0); x <= SDL_min(r[2], SCREEN_W - 1); ++x) {
+			uint32_t p = hudPx[y * SCREEN_W + x];
 			if ((p & 0xFFFFFF) == clear) continue;
 			int luma = (p & 0xFF) + ((p >> 8) & 0xFF) + ((p >> 16) & 0xFF);
 			if (luma < 3 * 96) {
@@ -4212,13 +4212,13 @@ static void card_backdrop(void) {
 	uint32_t clear = emu_hud_clear();
 	const int* r = hudProf->hud.card.side;
 	if (sideScore >= 0) {
-		for (int y = SDL_max(r[1], 0); y <= SDL_min(r[3], GBA_H - 1); ++y) {
-			for (int x = SDL_max(r[0], 0); x <= SDL_min(r[2], GBA_W - 1); ++x) cardBest[y * GBA_W + x] = sideBest[y * GBA_W + x];
+		for (int y = SDL_max(r[1], 0); y <= SDL_min(r[3], SCREEN_H - 1); ++y) {
+			for (int x = SDL_max(r[0], 0); x <= SDL_min(r[2], SCREEN_W - 1); ++x) cardBest[y * SCREEN_W + x] = sideBest[y * SCREEN_W + x];
 		}
 	}
-	for (int y = 0; y < GBA_H; ++y) {
-		for (int x = 0; x < GBA_W; ++x) {
-			uint32_t c = cardBest[y * GBA_W + x];
+	for (int y = 0; y < SCREEN_H; ++y) {
+		for (int x = 0; x < SCREEN_W; ++x) {
+			uint32_t c = cardBest[y * SCREEN_W + x];
 			c = (c & 0xFFFFFF) == clear && !hudProf->hud.card.whole ? 0xFF000000 : c | 0xFF000000;
 			uint32_t* o = &hudBack[y * 2 * HUD_CW + x * 2];
 			o[0] = o[1] = o[HUD_CW] = o[HUD_CW + 1] = c;
@@ -4237,7 +4237,7 @@ static const uint32_t* card_logo(void) {
 	static uint32_t cardLogo[HUD_CW * HUD_CH];
 	if (!cardLogoMade) {
 		for (int i = 0; i < HUD_CW * HUD_CH; ++i) cardLogo[i] = SCREEN_LIVE; /* (under the HUD: GEN-1) */
-		cardLogoMade = logo_draw(cardLogo, HUD_CW, HUD_CH, HUD_CW / GBA_W, hudProf->hud.card.whole ? 0 : 48 * 2, 255);
+		cardLogoMade = logo_draw(cardLogo, HUD_CW, HUD_CH, HUD_CW / SCREEN_W, hudProf->hud.card.whole ? 0 : 48 * 2, 255);
 	}
 	return cardLogo;
 }
@@ -4245,7 +4245,7 @@ static const uint32_t* card_logo(void) {
 /* hud.mapAt.holdTile: the map as last drawn (HUD pixels; mapHeldOk false:
  * none yet this race), and the dots among the sprites read after the last
  * frame */
-static uint32_t mapHeld[GBA_W * GBA_H];
+static uint32_t mapHeld[SCREEN_W * SCREEN_H];
 static bool mapHeldOk;
 static int mapUndrawn; /* frames since the map was last drawn */
 static uint16_t mapDots[32][3];
@@ -4295,13 +4295,13 @@ static void obj_mark(const uint16_t* a, uint8_t* mask, int x0, int y0, int bw, i
  * there, but the dots', go into mapHeld. */
 static void map_hold_update(const typeof(hudProf->hud)* h, uint32_t clear) {
 	if (!mapHeldOk) {
-		for (int i = 0; i < GBA_W * GBA_H; ++i) mapHeld[i] = clear;
+		for (int i = 0; i < SCREEN_W * SCREEN_H; ++i) mapHeld[i] = clear;
 		mapHeldOk = true;
 	}
 	int x0 = SDL_max(h->map.x0, 0), y0 = SDL_max(h->map.y0, 0);
-	int bw = SDL_min(h->map.x1, GBA_W - 1) - x0 + 1, bh = SDL_min(h->map.y1, GBA_H - 1) - y0 + 1;
+	int bw = SDL_min(h->map.x1, SCREEN_W - 1) - x0 + 1, bh = SDL_min(h->map.y1, SCREEN_H - 1) - y0 + 1;
 	if (bw <= 0 || bh <= 0) return;
-	static uint8_t mask[GBA_W * GBA_H];
+	static uint8_t mask[SCREEN_W * SCREEN_H];
 	memset(mask, 0, (size_t) bw * bh);
 	for (int d = 0; d < nMapDots; ++d) obj_mark(mapDots[d], mask, x0, y0, bw, bh);
 	nMapDots = 0;
@@ -4316,7 +4316,7 @@ static void map_hold_update(const typeof(hudProf->hud)* h, uint32_t clear) {
 	int other = 0;
 	for (int y = 0; y < bh; ++y) {
 		for (int x = 0; x < bw; ++x) {
-			if (!mask[y * bw + x] && (hudPx[(y + y0) * GBA_W + x + x0] & 0xFFFFFF) != clear) ++other;
+			if (!mask[y * bw + x] && (hudPx[(y + y0) * SCREEN_W + x + x0] & 0xFFFFFF) != clear) ++other;
 		}
 	}
 	if (other < 16) { /* (the dots alone: the map isn't drawn this frame) */
@@ -4326,7 +4326,7 @@ static void map_hold_update(const typeof(hudProf->hud)* h, uint32_t clear) {
 	mapUndrawn = 0;
 	for (int y = 0; y < bh; ++y) {
 		for (int x = 0; x < bw; ++x) {
-			if (!mask[y * bw + x]) mapHeld[(y + y0) * GBA_W + x + x0] = hudPx[(y + y0) * GBA_W + x + x0];
+			if (!mask[y * bw + x]) mapHeld[(y + y0) * SCREEN_W + x + x0] = hudPx[(y + y0) * SCREEN_W + x + x0];
 		}
 	}
 }
@@ -4344,7 +4344,7 @@ static void hud_compose(void) {
 	if (racing && h->map.x1 && (hudFrames <= 8 || h->mapAt.scale)) {
 		for (int y = h->map.y0; y <= h->map.y1; ++y) {
 			for (int x = h->map.x0; x <= h->map.x1; ++x) {
-				if ((hudPx[y * GBA_W + x] & 0xFFFFFF) == clear) continue;
+				if ((hudPx[y * SCREEN_W + x] & 0xFFFFFF) == clear) continue;
 				if (!mapFound) mapX0 = mapX1 = x, mapY0 = mapY1 = y, mapFound = true;
 				mapX0 = SDL_min(mapX0, x), mapX1 = SDL_max(mapX1, x);
 				mapY0 = SDL_min(mapY0, y), mapY1 = SDL_max(mapY1, y);
@@ -4369,8 +4369,8 @@ static void hud_compose(void) {
 	if (racing && h->sign.x1) {
 		bool inside = false, beside = false;
 		for (int y = h->sign.y0; y <= h->sign.y1 && !beside; ++y) {
-			for (int x = SDL_max(0, h->sign.x0 - 40); x <= SDL_min(GBA_W - 1, h->sign.x1 + 40); ++x) {
-				if ((hudPx[y * GBA_W + x] & 0xFFFFFF) == clear) continue;
+			for (int x = SDL_max(0, h->sign.x0 - 40); x <= SDL_min(SCREEN_W - 1, h->sign.x1 + 40); ++x) {
+				if ((hudPx[y * SCREEN_W + x] & 0xFFFFFF) == clear) continue;
 				if (x >= h->sign.x0 && x <= h->sign.x1) inside = true;
 				else beside = true;
 			}
@@ -4380,21 +4380,21 @@ static void hud_compose(void) {
 	if (sign) {
 		for (int y = h->sign.y0; y <= h->sign.y1; ++y) {
 			for (int x = h->sign.x0; x <= h->sign.x1; ++x) {
-				uint32_t c = hudPx[y * GBA_W + x];
-				if ((c & 0xFFFFFF) != clear) emu.fb[y * GBA_W + x] = c;
+				uint32_t c = hudPx[y * SCREEN_W + x];
+				if ((c & 0xFFFFFF) != clear) emu.fb[y * SCREEN_W + x] = c;
 			}
 		}
 	}
 	if (hudScene) {
 		if (!hudLogoDone) hud_make_logo_back();
 		memcpy(hudCanvas, hudLogoBack, sizeof(hudCanvas));
-	} else if ((hudAlt ? h->alt.mapBelow : h->mapBelow) && mapShownIdx >= 0 && mapW == GBA_W && mapH == GBA_H && map_px(mapShownIdx)) {
+	} else if ((hudAlt ? h->alt.mapBelow : h->mapBelow) && mapShownIdx >= 0 && mapW == SCREEN_W && mapH == SCREEN_H && map_px(mapShownIdx)) {
 		/* (hud.mapBelow, hud.alt.mapBelow: the map picture behind, at the game's size) */
 		const uint32_t* mp = map_px(mapShownIdx);
-		for (int y = 0; y < GBA_H; ++y) {
-			for (int x = 0; x < GBA_W; ++x) {
+		for (int y = 0; y < SCREEN_H; ++y) {
+			for (int x = 0; x < SCREEN_W; ++x) {
 				uint32_t* o = &hudCanvas[y * 2 * HUD_CW + x * 2];
-				o[0] = o[1] = o[HUD_CW] = o[HUD_CW + 1] = mp[y * GBA_W + x] | 0xFF000000;
+				o[0] = o[1] = o[HUD_CW] = o[HUD_CW + 1] = mp[y * SCREEN_W + x] | 0xFF000000;
 			}
 		}
 	} else if (h->logoBelow || h->logoBehind) {
@@ -4463,7 +4463,7 @@ static void hud_compose(void) {
 		for (int m = 0; m < HUD_MOVES; ++m) {
 			movesM[m] = movesIn[m];
 			if (movesM[m].y0 > 0) movesM[m].y0 = (movesM[m].y0 + mosV - 1) / mosV * mosV;
-			if (movesM[m].y1 < GBA_H - 1) movesM[m].y1 = (movesM[m].y1 + mosV) / mosV * mosV - 1;
+			if (movesM[m].y1 < SCREEN_H - 1) movesM[m].y1 = (movesM[m].y1 + mosV) / mosV * mosV - 1;
 		}
 		moves = movesM;
 	}
@@ -4471,9 +4471,9 @@ static void hud_compose(void) {
 	 * HUD that far down */
 	int titleDy = h->mapTitleRows && mapTitleN ? mapTitleN + 2 : 0; /* (2 rows apart) */
 	for (int y = 0; y < titleDy; ++y) {
-		for (int x = 0; x < GBA_W; ++x) {
+		for (int x = 0; x < SCREEN_W; ++x) {
 			uint32_t* o = &hudCanvas[y * 2 * HUD_CW + x * 2];
-			o[0] = o[1] = o[HUD_CW] = o[HUD_CW + 1] = mapTitle[y * GBA_W + x];
+			o[0] = o[1] = o[HUD_CW] = o[HUD_CW + 1] = mapTitle[y * SCREEN_W + x];
 		}
 	}
 	int moveDx[HUD_MOVES] = { 0 }, moveDy[HUD_MOVES] = { 0 };
@@ -4483,10 +4483,10 @@ static void hud_compose(void) {
 		const HudMove* mv = &moves[m];
 		if (!mv->how && !mv->vhow && !mv->toGame) continue;
 		if (mv->ifTile && !oam_has_tile(mv->ifTile)) continue;
-		int lo = GBA_W, hi = -1, top = GBA_H, bot = -1;
-		for (int y = SDL_max(mv->y0, 0); y <= SDL_min(mv->y1, GBA_H - 1); ++y) {
-			for (int x = SDL_max(mv->x0, 0); x <= SDL_min(mv->x1, GBA_W - 1); ++x) {
-				if ((hudPx[y * GBA_W + x] & 0xFFFFFF) == clear) continue;
+		int lo = SCREEN_W, hi = -1, top = SCREEN_H, bot = -1;
+		for (int y = SDL_max(mv->y0, 0); y <= SDL_min(mv->y1, SCREEN_H - 1); ++y) {
+			for (int x = SDL_max(mv->x0, 0); x <= SDL_min(mv->x1, SCREEN_W - 1); ++x) {
+				if ((hudPx[y * SCREEN_W + x] & 0xFFFFFF) == clear) continue;
 				lo = SDL_min(lo, x), hi = SDL_max(hi, x), top = SDL_min(top, y), bot = SDL_max(bot, y);
 			}
 		}
@@ -4501,10 +4501,10 @@ static void hud_compose(void) {
 	for (int m = 0; moves && m < HUD_MOVES; ++m) {
 		const HudMove* mv = &moves[m];
 		if (!moving[m] || !mv->under) continue;
-		int ulo = GBA_W, ubot = -1;
-		for (int y = 0; y < SDL_min(mv->y0, GBA_H); ++y) {
-			for (int x = SDL_max(mv->x0, 0); x <= SDL_min(mv->x1, GBA_W - 1); ++x) {
-				if ((hudPx[y * GBA_W + x] & 0xFFFFFF) == clear) continue;
+		int ulo = SCREEN_W, ubot = -1;
+		for (int y = 0; y < SDL_min(mv->y0, SCREEN_H); ++y) {
+			for (int x = SDL_max(mv->x0, 0); x <= SDL_min(mv->x1, SCREEN_W - 1); ++x) {
+				if ((hudPx[y * SCREEN_W + x] & 0xFFFFFF) == clear) continue;
 				bool other = false;
 				for (int k = 0; k < HUD_MOVES && !other; ++k) {
 					const HudMove* o = &moves[k];
@@ -4515,9 +4515,9 @@ static void hud_compose(void) {
 		}
 		if (ubot >= 0) moveDx[m] = ulo - pieceLo[m], moveDy[m] = ubot + 1 + mv->under - pieceTop[m];
 	}
-	for (int y = 0; y < GBA_H; ++y) {
-		for (int x = 0; x < GBA_W; ++x) {
-			uint32_t c = hudPx[y * GBA_W + x];
+	for (int y = 0; y < SCREEN_H; ++y) {
+		for (int x = 0; x < SCREEN_W; ++x) {
+			uint32_t c = hudPx[y * SCREEN_W + x];
 			if ((c & 0xFFFFFF) == clear) continue;
 			int nx = x, ny = y;
 			bool toGame = false;
@@ -4529,16 +4529,16 @@ static void hud_compose(void) {
 					break;
 				}
 			}
-			if (nx < 0 || nx >= GBA_W || ny < 0 || ny >= GBA_H) continue;
+			if (nx < 0 || nx >= SCREEN_W || ny < 0 || ny >= SCREEN_H) continue;
 			if (toGame) {
-				emu.fb[ny * GBA_W + nx] = c; /* back onto the game picture */
+				emu.fb[ny * SCREEN_W + nx] = c; /* back onto the game picture */
 				continue;
 			}
 			if (h->rows && y >= h->rows) continue; /* (hud.rows: the game draws the rest) */
 			if (sign && x >= h->sign.x0 && x <= h->sign.x1 && y >= h->sign.y0 && y <= h->sign.y1) continue;
 			if (bigMap && x >= bx0 && x <= bx1 && y >= by0 && y <= by1) continue;
 			ny += titleDy;
-			if (ny >= GBA_H) continue;
+			if (ny >= SCREEN_H) continue;
 			uint32_t* o = &hudCanvas[ny * 2 * HUD_CW + nx * 2];
 			o[0] = o[1] = o[HUD_CW] = o[HUD_CW + 1] = c;
 		}
@@ -4553,10 +4553,10 @@ static void hud_compose(void) {
 		int tx = SDL_clamp(cx - w * q / 2, 0, HUD_CW - w * q), ty = SDL_clamp(cy - hh * q / 2, 0, HUD_CH - hh * q);
 		for (int y = by0; y <= by1; ++y) {
 			for (int x = bx0; x <= bx1; ++x) {
-				uint32_t c = hudPx[y * GBA_W + x];
+				uint32_t c = hudPx[y * SCREEN_W + x];
 				/* (the dots on the map held; not once the game's stopped
 				 * drawing it, as a Grand Prix ends) */
-				if (hold && mapUndrawn <= 3 && (c & 0xFFFFFF) == clear) c = mapHeld[y * GBA_W + x];
+				if (hold && mapUndrawn <= 3 && (c & 0xFFFFFF) == clear) c = mapHeld[y * SCREEN_W + x];
 				if ((c & 0xFFFFFF) == clear) continue;
 				for (int j = 0; j < q; ++j) {
 					uint32_t* o = &hudCanvas[(ty + (y - by0) * q + j) * HUD_CW + tx + (x - bx0) * q];
@@ -4599,10 +4599,10 @@ static bool hud_take_pieces(const typeof(hudProf->hud)* h) {
 		if (!mv->how && !mv->vhow && !mv->asIs) continue;
 		int bx0 = mv->x0, by0 = mv->y0, bx1 = mv->x1, by1 = mv->y1;
 		if (h->findPieces) bx0 = found[m][0], by0 = found[m][1], bx1 = found[m][2], by1 = found[m][3];
-		int lo = GBA_W, hi = -1, top = GBA_H, bot = -1;
-		for (int y = SDL_max(by0, 0); y <= SDL_min(by1, GBA_H - 1); ++y) {
-			for (int x = SDL_max(bx0, 0); x <= SDL_min(bx1, GBA_W - 1); ++x) {
-				if ((hudPx[y * GBA_W + x] & 0xFFFFFF) == clear) continue;
+		int lo = SCREEN_W, hi = -1, top = SCREEN_H, bot = -1;
+		for (int y = SDL_max(by0, 0); y <= SDL_min(by1, SCREEN_H - 1); ++y) {
+			for (int x = SDL_max(bx0, 0); x <= SDL_min(bx1, SCREEN_W - 1); ++x) {
+				if ((hudPx[y * SCREEN_W + x] & 0xFFFFFF) == clear) continue;
 				lo = SDL_min(lo, x), hi = SDL_max(hi, x), top = SDL_min(top, y), bot = SDL_max(bot, y);
 			}
 		}
@@ -4618,12 +4618,12 @@ static bool hud_take_pieces(const typeof(hudProf->hud)* h) {
 		pc->gone = 0;
 		if (!mv->latch && (pc->sx != lo || pc->sy != top)) changed = true; /* (its followers move) */
 		if (!mv->latch) pc->sx = lo, pc->sy = top;
-		if (pc->atBottom != (bot == GBA_H - 1)) pc->atBottom = bot == GBA_H - 1, changed = true;
-		static uint32_t cut[GBA_W * GBA_H];
+		if (pc->atBottom != (bot == SCREEN_H - 1)) pc->atBottom = bot == SCREEN_H - 1, changed = true;
+		static uint32_t cut[SCREEN_W * SCREEN_H];
 		int w = hi - lo + 1, hh = bot - top + 1;
 		for (int y = 0; y < hh; ++y) {
 			for (int x = 0; x < w; ++x) {
-				uint32_t c = hudPx[(top + y) * GBA_W + lo + x];
+				uint32_t c = hudPx[(top + y) * SCREEN_W + lo + x];
 				cut[y * w + x] = (c & 0xFFFFFF) == clear ? 0 : c | 0xFF000000;
 			}
 		}
@@ -4666,7 +4666,7 @@ static bool hud_take_pieces(const typeof(hudProf->hud)* h) {
  * one is split. A frame is shown only if it was split and still looks like
  * racing (the first pause-menu frame is split too, and is dropped). */
 /* hud.mirror: the game screen's last picture from before */
-static uint32_t mirrorHeld[GBA_W * GBA_H];
+static uint32_t mirrorHeld[SCREEN_W * SCREEN_H];
 static bool mirrorHave, mirrorOn;
 
 static void update_hud(void) {
@@ -4680,8 +4680,8 @@ static void update_hud(void) {
 			while (n < 8 && (h->held.probes[n].x || h->held.probes[n].y || h->held.probes[n].rgb)) ++n;
 			if (probes_hit(emu.fb, h->held.probes, h->held.tol) >= (h->held.min ? h->held.min : n)) {
 				heldArmed = false;
-				heldN = SDL_min(h->held.y1, GBA_H - 1) - h->held.y0 + 1;
-				memcpy(heldPic, emu.fb + h->held.y0 * GBA_W, (size_t) heldN * GBA_W * 4);
+				heldN = SDL_min(h->held.y1, SCREEN_H - 1) - h->held.y0 + 1;
+				memcpy(heldPic, emu.fb + h->held.y0 * SCREEN_W, (size_t) heldN * SCREEN_W * 4);
 				heldNumW = 0; /* (its own number is the latest till the next capture) */
 				hudLogoBelowDone = false;
 				if (debug) fprintf(stderr, "frame %llu: picture kept for under the HUD\n", (unsigned long long) frameCount);
@@ -4716,10 +4716,10 @@ static void update_hud(void) {
 				}
 			} else {
 				/* the whole screen over there */
-				for (int y = 0; y < GBA_H; ++y) {
-					for (int x = 0; x < GBA_W; ++x) {
+				for (int y = 0; y < SCREEN_H; ++y) {
+					for (int x = 0; x < SCREEN_W; ++x) {
 						uint32_t* o = &hudCanvas[y * 2 * HUD_CW + x * 2];
-						o[0] = o[1] = o[HUD_CW] = o[HUD_CW + 1] = emu.fb[y * GBA_W + x] | 0xFF000000;
+						o[0] = o[1] = o[HUD_CW] = o[HUD_CW + 1] = emu.fb[y * SCREEN_W + x] | 0xFF000000;
 					}
 				}
 				for (int i = 0; i < nViews; ++i) ui_update_texture(hudTex[i], hudCanvas, HUD_CW * 4);
@@ -4840,7 +4840,7 @@ static void update_hud(void) {
 		if (h->emptyIsOff) {
 			uint32_t clear = emu_hud_clear();
 			empty = true;
-			for (int i = 0; i < GBA_W * GBA_H && empty; ++i) empty = (hudPx[i] & 0xFFFFFF) == clear;
+			for (int i = 0; i < SCREEN_W * SCREEN_H && empty; ++i) empty = (hudPx[i] & 0xFFFFFF) == clear;
 			emptyFor = empty ? emptyFor + 1 : 0;
 		}
 		if (h->emptyIsOff && emptyFor >= 20) {
@@ -4891,7 +4891,7 @@ static void update_hud(void) {
 			/* (this frame was drawn before the split was on: drawn again
 			 * without the HUD, so it isn't on the game screen for a frame,
 			 * SA3-3) */
-			static uint32_t noHud[GBA_W * GBA_H];
+			static uint32_t noHud[SCREEN_W * SCREEN_H];
 			snapshot_hiding_sprites(hudObjs, rule_count(hudObjs, 12), NULL, 0, noHud);
 			memcpy(emu.fb, noHud, sizeof(noHud));
 		}
@@ -5023,7 +5023,7 @@ typedef struct { const uint32_t* px; int row; int from, safe; } TallSrc;
 int stbi_write_png(char const* filename, int w, int h, int comp, const void* data, int stride_in_bytes);
 static bool tallKeep; /* (carry) a row no picture has keeps what it showed last */
 /* the live view's last 10 seconds, a line a frame, for bug reports
- * (GBADS_TALL_TRACE's lines, kept whether it's set or not) */
+ * (PSXDS_TALL_TRACE's lines, kept whether it's set or not) */
 #define TALL_LOG 600
 static char tallLog[TALL_LOG][176];
 static unsigned tallLogN;
@@ -5032,12 +5032,12 @@ static bool tall_line(uint32_t* dst, int row, const TallSrc* src, int n) {
 		for (int i = 0; i < n; ++i) {
 			int y = row - src[i].row;
 			int lo = pass ? src[i].from : SDL_max(src[i].from, src[i].safe);
-			if (src[i].px && y >= lo && y < GBA_H) {
-				memcpy(dst, &src[i].px[y * GBA_W], sizeof(uint32_t) * GBA_W);
+			if (src[i].px && y >= lo && y < SCREEN_H) {
+				memcpy(dst, &src[i].px[y * SCREEN_W], sizeof(uint32_t) * SCREEN_W);
 				return true;
 			}
 		}
-	if (!tallKeep) for (int x = 0; x < GBA_W; ++x) dst[x] = 0xFF000000;
+	if (!tallKeep) for (int x = 0; x < SCREEN_W; ++x) dst[x] = 0xFF000000;
 	return false;
 }
 /* Whether the game's BG0 has a pixel at screen (x, y) above the score bar
@@ -5087,7 +5087,7 @@ static void update_tall(void) {
 	if (up && tall_carry(tallProf)) {
 		int s0 = emu_io16(&emu, 0x10 + 4 * L->viewBg + 2) & 0x1FF, r0 = tall_rows_of(tallProf, &emu);
 		if (s0 >= r0) s0 -= 512;
-		if (s0 - twinShakeNow > r0 - 2 * GBA_H && !(twins[0].up && twins[0].havePic)) up = false;
+		if (s0 - twinShakeNow > r0 - 2 * SCREEN_H && !(twins[0].up && twins[0].havePic)) up = false;
 		for (int i = 0; i < 3 && L->carry.plain[i].addr; ++i)
 			if (memprobes_match(&L->carry.plain[i], 1, &emu)) up = false;
 	}
@@ -5110,7 +5110,7 @@ static void update_tall(void) {
 	 * below) */
 	bool carry = tall_carry(tallProf);
 	emu_hud_copy_above(carry ? 0 : t->hudRow);
-	int rows = tall_rows_of(tallProf, &emu), vmax = rows - 2 * GBA_H, top = tall_top_of(tallProf);
+	int rows = tall_rows_of(tallProf, &emu), vmax = rows - 2 * SCREEN_H, top = tall_top_of(tallProf);
 	int s = emu_io16(&emu, 0x10 + 4 * L->viewBg + 2) & 0x1FF; /* this frame's */
 	if (s >= rows) s -= 512;
 	/* (the screen shake moves the whole view, as it does the game's screen;
@@ -5140,15 +5140,15 @@ static void update_tall(void) {
 	int gf = carry && L->carry.gameFrom ? L->carry.gameFrom - 1 : 0;
 	/* (what the top screen showed last frame, for a frame whose rows aren't
 	 * all there: below) */
-	static uint32_t prevTop[GBA_W * GBA_H];
+	static uint32_t prevTop[SCREEN_W * SCREEN_H];
 	memcpy(prevTop, tallTop, sizeof(prevTop));
 	bool havePrevTop = tallLive && !firstLive;
 	int topMissing = 0;
-	for (int y = 0; y < GBA_H; ++y) {
-		if (y < gf) memcpy(&tallTop[y * GBA_W], &emu.fb[y * GBA_W], sizeof(uint32_t) * GBA_W);
-		else if (gf && y == gf) for (int x = 0; x < GBA_W; ++x) tallTop[y * GBA_W + x] = 0xFF000000u;
-		else topMissing += !tall_line(&tallTop[y * GBA_W], v + y, topSrc, 3);
-		missing += !tall_line(&tallBot[y * GBA_W], v + GBA_H + y, botSrc, 3);
+	for (int y = 0; y < SCREEN_H; ++y) {
+		if (y < gf) memcpy(&tallTop[y * SCREEN_W], &emu.fb[y * SCREEN_W], sizeof(uint32_t) * SCREEN_W);
+		else if (gf && y == gf) for (int x = 0; x < SCREEN_W; ++x) tallTop[y * SCREEN_W + x] = 0xFF000000u;
+		else topMissing += !tall_line(&tallTop[y * SCREEN_W], v + y, topSrc, 3);
+		missing += !tall_line(&tallBot[y * SCREEN_W], v + SCREEN_H + y, botSrc, 3);
 	}
 	missing += topMissing;
 	if (carry) topMissing = 0; /* (carry keeps its own rows: tallKeep) */
@@ -5169,13 +5169,13 @@ static void update_tall(void) {
 		 * view near the table's top): the logo, as the rows it would show
 		 * are the game's own again. Until the copy is there, what the top
 		 * screen showed last) */
-		if (s - k - GBA_H < top) {
-			for (int i = 0; i < GBA_W * GBA_H; ++i) tallTop[i] = SCREEN_GREY;
-			logo_draw(tallTop, GBA_W, GBA_H, 1, 0, 128 /* LOGO_IDLE */);
+		if (s - k - SCREEN_H < top) {
+			for (int i = 0; i < SCREEN_W * SCREEN_H; ++i) tallTop[i] = SCREEN_GREY;
+			logo_draw(tallTop, SCREEN_W, SCREEN_H, 1, 0, 128 /* LOGO_IDLE */);
 			tallTopLogo = true;
 		} else {
 			int off = 0;
-			for (int y = 0; y < GBA_H; ++y) off += !tall_line(&tallTop[y * GBA_W], s - GBA_H + y, &a, 1);
+			for (int y = 0; y < SCREEN_H; ++y) off += !tall_line(&tallTop[y * SCREEN_W], s - SCREEN_H + y, &a, 1);
 			if (off) memcpy(tallTop, prevTop, sizeof(tallTop));
 			else tallTopLogo = false;
 		}
@@ -5208,27 +5208,27 @@ static void update_tall(void) {
 		 * screen with the ball, at their place on the game's screen. Which
 		 * screen is settled as they come up, from where the ball is then,
 		 * and kept while they're up: they never move between the screens) */
-		static uint8_t box[GBA_W * GBA_H];
+		static uint8_t box[SCREEN_W * SCREEN_H];
 		bool anyFixed = false;
 		if (!carry) {
 			memset(box, 0, sizeof(box));
 			for (int f = 0; f < nTallFixed; ++f) {
 				uint16_t a0 = tallFixed[f][0], a1 = tallFixed[f][1];
 				int y0 = a0 & 0xFF, x0 = a1 & 0x1FF, h = obj_height(a0, a1), w = obj_width(a0, a1);
-				if (y0 >= GBA_H) y0 -= 256;
-				if (x0 >= GBA_W) x0 -= 512;
+				if (y0 >= SCREEN_H) y0 -= 256;
+				if (x0 >= SCREEN_W) x0 -= 512;
 				for (int y = SDL_max(y0, 0); y < SDL_min(y0 + h, t->hudRow); ++y)
-					for (int x = SDL_max(x0, 0); x < SDL_min(x0 + w, GBA_W); ++x) {
-						if ((hudPx[y * GBA_W + x] & 0xFFFFFF) == clear) continue;
+					for (int x = SDL_max(x0, 0); x < SDL_min(x0 + w, SCREEN_W); ++x) {
+						if ((hudPx[y * SCREEN_W + x] & 0xFFFFFF) == clear) continue;
 						if (L->msg.map && tall_bg0_pixel(L->msg.map, L->msg.row0, x, y)) continue; /* (BG0's: the timer) */
-						box[y * GBA_W + x] = 1, anyFixed = true;
+						box[y * SCREEN_W + x] = 1, anyFixed = true;
 					}
 			}
 			if (anyFixed) {
 				if (!tallFixedHold) {
 					uint32_t S = emu_read32(&emu, L->state);
 					int32_t bx, by;
-					bool bot = twin_ball(&emu, S, &bx, &by) && (by >> 8) >= v + GBA_H - k;
+					bool bot = twin_ball(&emu, S, &bx, &by) && (by >> 8) >= v + SCREEN_H - k;
 					if (bot != tallFixedBot && debug) fprintf(stderr, "frame %llu: banners on the %s screen (the ball's there)\n", (unsigned long long) frameCount, bot ? "bottom" : "top");
 					tallFixedBot = bot;
 				}
@@ -5237,7 +5237,7 @@ static void update_tall(void) {
 				--tallFixedHold;
 			}
 		}
-		for (int i = 0; i < GBA_W * t->hudRow; ++i) {
+		for (int i = 0; i < SCREEN_W * t->hudRow; ++i) {
 			if ((hudPx[i] & 0xFFFFFF) == clear) continue;
 			if (!carry && box[i] && tallFixedBot) tallBot[i] = hudPx[i] | 0xFF000000;
 			else tallTop[i] = hudPx[i] | 0xFF000000;
@@ -5251,7 +5251,7 @@ static void update_tall(void) {
 		tallBandY0 = tallBandY1 = -1;
 		for (int y = 24; y < t->hudRow; ++y) {
 			int n = 0;
-			for (int x = 0; x < GBA_W; ++x) n += (hudPx[y * GBA_W + x] & 0xFFFFFF) != cl;
+			for (int x = 0; x < SCREEN_W; ++x) n += (hudPx[y * SCREEN_W + x] & 0xFFFFFF) != cl;
 			if (n > 8) tallBandY1 = y, tallBandY0 = tallBandY0 < 0 ? y : tallBandY0;
 		}
 	}
@@ -5262,28 +5262,28 @@ static void update_tall(void) {
 	 * left edge, a banner sliding up through them), stays with the rest of
 	 * it on the top screen: the columns with something in the two rows just
 	 * above, and 8 either side) */
-	static bool down[GBA_W];
+	static bool down[SCREEN_W];
 	bool anyDown = false;
 	memset(down, 0, sizeof(down));
 	if (carry && !firstLive && !msg && t->hudRow >= 2) {
-		for (int x = 0; x < GBA_W; ++x) {
-			if ((hudPx[(t->hudRow - 1) * GBA_W + x] & 0xFFFFFF) == clear && (hudPx[(t->hudRow - 2) * GBA_W + x] & 0xFFFFFF) == clear) continue;
-			for (int d = SDL_max(0, x - 8); d <= SDL_min(GBA_W - 1, x + 8); ++d) down[d] = true;
+		for (int x = 0; x < SCREEN_W; ++x) {
+			if ((hudPx[(t->hudRow - 1) * SCREEN_W + x] & 0xFFFFFF) == clear && (hudPx[(t->hudRow - 2) * SCREEN_W + x] & 0xFFFFFF) == clear) continue;
+			for (int d = SDL_max(0, x - 8); d <= SDL_min(SCREEN_W - 1, x + 8); ++d) down[d] = true;
 			anyDown = true;
 		}
 	}
-	for (int i = GBA_W * t->hudRow; i < GBA_W * GBA_H; ++i) {
+	for (int i = SCREEN_W * t->hudRow; i < SCREEN_W * SCREEN_H; ++i) {
 		if ((hudPx[i] & 0xFFFFFF) == clear) continue;
-		if (anyDown && down[i % GBA_W]) tallTop[i] = hudPx[i] | 0xFF000000;
+		if (anyDown && down[i % SCREEN_W]) tallTop[i] = hudPx[i] | 0xFF000000;
 		else tallBot[i] = hudPx[i] | 0xFF000000;
 	}
 	if (!msg) memcpy(lastTop, tallTop, sizeof(lastTop)), haveLastTop = true;
 	uint32_t* second = cfg->swap ? tallTop : tallBot;
-	for (int i = 0; i < nViews; ++i) ui_update_texture(mapTex[i], second, GBA_W * 4);
+	for (int i = 0; i < nViews; ++i) ui_update_texture(mapTex[i], second, SCREEN_W * 4);
 	int same = -1; /* (trace: where a copy shows the game's own rows, how many pixels differ) */
 	if (tallTrace && twins[1].picRow == s) {
 		same = 0;
-		for (int i = GBA_W * 24; i < GBA_W * t->hudRow; ++i) same += (twins[1].pic[i] & 0xFFFFFF) != (emu.fb[i] & 0xFFFFFF);
+		for (int i = SCREEN_W * 24; i < SCREEN_W * t->hudRow; ++i) same += (twins[1].pic[i] & 0xFFFFFF) != (emu.fb[i] & 0xFFFFFF);
 	}
 	if (tallTrace && carry) {
 		/* (trace: the game's picture against the copies' at the same table
@@ -5292,30 +5292,30 @@ static void update_tall(void) {
 		for (int k = 0; k < 2; ++k) {
 			const Twin* tw = &twins[k];
 			if (!tw->up || !tw->havePic) continue;
-			for (int y = 0; y < GBA_H; ++y) {
+			for (int y = 0; y < SCREEN_H; ++y) {
 				int cy = s + y - tw->picRow;
-				if (cy < 0 || cy >= GBA_H) continue;
+				if (cy < 0 || cy >= SCREEN_H) continue;
 				int r = y < 24 ? 0 : y < 150 ? 1 : 2;
 				++n[r];
-				for (int x = 0; x < GBA_W; ++x) d[r] += (tw->pic[cy * GBA_W + x] & 0xFFFFFF) != (emu.fb[y * GBA_W + x] & 0xFFFFFF);
+				for (int x = 0; x < SCREEN_W; ++x) d[r] += (tw->pic[cy * SCREEN_W + x] & 0xFFFFFF) != (emu.fb[y * SCREEN_W + x] & 0xFFFFFF);
 			}
 		}
 		if (n[0] + n[1] + n[2]) fprintf(stderr, "cmp %d/%d %d/%d %d/%d\n", d[0], n[0], d[1], n[1], d[2], n[2]);
 	}
-	if (getenv("GBADS_TALL_AT") && frameCount == (unsigned long long) atoll(getenv("GBADS_TALL_AT"))) {
-		static uint32_t sh[GBA_W * 3 * GBA_H];
-		for (int y = 0; y < GBA_H; ++y) for (int x = 0; x < GBA_W; ++x) {
-			sh[y * GBA_W * 3 + x] = emu.fb[y * GBA_W + x] | 0xFF000000;
-			sh[y * GBA_W * 3 + GBA_W + x] = twins[0].pic[y * GBA_W + x] | 0xFF000000;
-			sh[y * GBA_W * 3 + 2 * GBA_W + x] = twins[1].pic[y * GBA_W + x] | 0xFF000000;
+	if (getenv("PSXDS_TALL_AT") && frameCount == (unsigned long long) atoll(getenv("PSXDS_TALL_AT"))) {
+		static uint32_t sh[SCREEN_W * 3 * SCREEN_H];
+		for (int y = 0; y < SCREEN_H; ++y) for (int x = 0; x < SCREEN_W; ++x) {
+			sh[y * SCREEN_W * 3 + x] = emu.fb[y * SCREEN_W + x] | 0xFF000000;
+			sh[y * SCREEN_W * 3 + SCREEN_W + x] = twins[0].pic[y * SCREEN_W + x] | 0xFF000000;
+			sh[y * SCREEN_W * 3 + 2 * SCREEN_W + x] = twins[1].pic[y * SCREEN_W + x] | 0xFF000000;
 		}
-		stbi_write_png(getenv("GBADS_TALL_PNG"), GBA_W * 3, GBA_H, 4, sh, GBA_W * 3 * 4);
+		stbi_write_png(getenv("PSXDS_TALL_PNG"), SCREEN_W * 3, SCREEN_H, 4, sh, SCREEN_W * 3 * 4);
 		char sp[1200];
-		snprintf(sp, sizeof sp, "%s.game.ss", getenv("GBADS_TALL_PNG")); emu_state_save_file(&emu, sp);
-		snprintf(sp, sizeof sp, "%s.b.ss", getenv("GBADS_TALL_PNG")); emu_state_save_file(&twins[1].e, sp);
-		FILE* of = fopen(getenv("GBADS_TALL_PNG"), "ab"); if (of) fclose(of);
+		snprintf(sp, sizeof sp, "%s.game.ss", getenv("PSXDS_TALL_PNG")); emu_state_save_file(&emu, sp);
+		snprintf(sp, sizeof sp, "%s.b.ss", getenv("PSXDS_TALL_PNG")); emu_state_save_file(&twins[1].e, sp);
+		FILE* of = fopen(getenv("PSXDS_TALL_PNG"), "ab"); if (of) fclose(of);
 		for (int w = 0; w < 2; ++w) {
-			snprintf(sp, sizeof sp, "%s.%s.oam", getenv("GBADS_TALL_PNG"), w ? "b" : "game");
+			snprintf(sp, sizeof sp, "%s.%s.oam", getenv("PSXDS_TALL_PNG"), w ? "b" : "game");
 			FILE* f = fopen(sp, "wb");
 			for (int i = 0; f && i < 512; ++i) { uint16_t v = emu_read16(w ? &twins[1].e : &emu, 0x07000000 + i * 2); fwrite(&v, 2, 1, f); }
 			if (f) fclose(f);
@@ -5342,20 +5342,20 @@ static void update_snapshot(void) {
 			const uint32_t* px = emu.fb;
 			if (sn->hide[0].x1) {
 				/* only when the picture changes (the sheets are still) */
-				static uint32_t last[GBA_W * GBA_H], clean[GBA_W * GBA_H];
+				static uint32_t last[SCREEN_W * SCREEN_H], clean[SCREEN_W * SCREEN_H];
 				if (mapShownIdx < 0 || memcmp(last, emu.fb, sizeof(last))) {
 					memcpy(last, emu.fb, sizeof(last));
 					int n = 0;
 					while (n < 4 && sn->hide[n].x1) ++n;
 					snapshot_hiding_sprites(sn->hide, n, NULL, 0, clean);
 					memcpy(snapShown, clean, sizeof(snapShown));
-					for (int i = 0; i < nViews; ++i) ui_update_texture(mapTex[i], clean, GBA_W * 4);
+					for (int i = 0; i < nViews; ++i) ui_update_texture(mapTex[i], clean, SCREEN_W * 4);
 				}
 				px = NULL;
 			}
 			if (px) {
 				memcpy(snapShown, px, sizeof(snapShown));
-				for (int i = 0; i < nViews; ++i) ui_update_texture(mapTex[i], px, GBA_W * 4);
+				for (int i = 0; i < nViews; ++i) ui_update_texture(mapTex[i], px, SCREEN_W * 4);
 			}
 			if (mapShownIdx < 0 && debug) fprintf(stderr, "frame %llu: screen copied to the second screen\n", (unsigned long long) frameCount);
 			mapShownIdx = 0;
@@ -5379,7 +5379,7 @@ static void update_snapshot(void) {
 
 /* ---------------------------------------------------------- control scheme
  * Games with a four-face-button layout (profile `controls`): a picker on the
- * second screen (touch only) chooses the GBA layout, the four-face one, or
+ * second screen (touch only) chooses the PS1 layout, the four-face one, or
  * Auto (four-face while the player controls the character). Saved per game
  * in <state_dir>/<game>.controls. */
 static int game_screen(void);
@@ -5511,7 +5511,7 @@ static void ctl_draw(int s) {
 		t = g.tile[i];
 		int d = t.w * 30 / 100;
 		if (ctl_snes()) {
-			ui_label(s, t.x + t.w / 2, t.y + t.h / 2, g.cap * 4 / 5, i == CTL_GBA ? "GBA" : "SNES", G_TEXT);
+			ui_label(s, t.x + t.w / 2, t.y + t.h / 2, g.cap * 4 / 5, i == CTL_GBA ? "PS1" : "SNES", G_TEXT);
 		} else if (i == CTL_GBA) {
 			ctl_button(s, BRAND_PILL_L, &t, 32, 27, t.w * 34 / 100);
 			ctl_button(s, BRAND_PILL_R, &t, 68, 27, t.w * 34 / 100);
@@ -5547,7 +5547,7 @@ static bool ctl_tap(int s, int x, int y) {
 }
 
 static void save_thumbs(void) {
-	SDL_Surface* s = SDL_CreateRGBSurfaceWithFormatFrom(emu.fb, GBA_W, GBA_H, 32, GBA_W * 4, SDL_PIXELFORMAT_XBGR8888);
+	SDL_Surface* s = SDL_CreateRGBSurfaceWithFormatFrom(emu.fb, SCREEN_W, SCREEN_H, 32, SCREEN_W * 4, SDL_PIXELFORMAT_XBGR8888);
 	if (s) {
 		SDL_SaveBMP(s, gp.thumb);
 		SDL_FreeSurface(s);
@@ -5603,13 +5603,13 @@ static void* screen_blob(size_t* n) {
 	if (snapProf && mapShownIdx >= 0) blob_section(&b, "SNAP", snapShown, sizeof(snapShown));
 	if (mapTitleN > 0) {
 		Blob t = { 0 };
-		blob_u32(&t, (uint32_t) mapTitleN), blob_add(&t, mapTitle, (size_t) GBA_W * mapTitleN * 4);
+		blob_u32(&t, (uint32_t) mapTitleN), blob_add(&t, mapTitle, (size_t) SCREEN_W * mapTitleN * 4);
 		if (t.p) blob_section(&b, "TITL", t.p, t.n);
 		free(t.p);
 	}
 	if (hudProf && hudProf->hud.held.y1 && heldN > 0) {
 		Blob t = { 0 };
-		blob_u32(&t, (uint32_t) heldN), blob_add(&t, heldPic, (size_t) GBA_W * heldN * 4);
+		blob_u32(&t, (uint32_t) heldN), blob_add(&t, heldPic, (size_t) SCREEN_W * heldN * 4);
 		if (t.p) blob_section(&b, "HELD", t.p, t.n);
 		free(t.p);
 		if (heldNumW > 0) {
@@ -5634,16 +5634,16 @@ static bool state_is_retroarch(const char* path) {
 	return n && !strncmp(path, gp.raDir, n) && path[n] == '/';
 }
 /* RetroArch's thumbnail beside a state (<state>.png, for its menu): the
- * game's picture as it is now, at the GBA's size */
+ * game's picture as it is now, at the PS1's size */
 static void state_thumbnail(const char* path) {
-	uint8_t* px = malloc((size_t) GBA_W * GBA_H * 4);
+	uint8_t* px = malloc((size_t) SCREEN_W * SCREEN_H * 4);
 	if (!px) return;
-	memcpy(px, emu.fb, (size_t) GBA_W * GBA_H * 4); /* (bytes R, G, B, X) */
-	for (size_t i = 0; i < (size_t) GBA_W * GBA_H; ++i) px[i * 4 + 3] = 255;
+	memcpy(px, emu.fb, (size_t) SCREEN_W * SCREEN_H * 4); /* (bytes R, G, B, X) */
+	for (size_t i = 0; i < (size_t) SCREEN_W * SCREEN_H; ++i) px[i * 4 + 3] = 255;
 	char png[1100], tmp[1110];
 	snprintf(png, sizeof(png), "%s.png", path);
 	snprintf(tmp, sizeof(tmp), "%s.tmp.png", path);
-	if (!stbi_write_png(tmp, GBA_W, GBA_H, 4, px, GBA_W * 4) || rename(tmp, png) != 0) {
+	if (!stbi_write_png(tmp, SCREEN_W, SCREEN_H, 4, px, SCREEN_W * 4) || rename(tmp, png) != 0) {
 		remove(tmp);
 		fprintf(stderr, "save state: no thumbnail %s\n", png);
 	}
@@ -5715,20 +5715,20 @@ static void screen_restore_apply(void) {
 	}
 	if (snapProf && (d = blob_find(b, n, "SNAP", &sz)) && sz == sizeof(snapShown)) {
 		memcpy(snapShown, d, sz);
-		for (int i = 0; i < nViews; ++i) ui_update_texture(mapTex[i], snapShown, GBA_W * 4);
+		for (int i = 0; i < nViews; ++i) ui_update_texture(mapTex[i], snapShown, SCREEN_W * 4);
 		mapShownIdx = 0;
 	}
 	if ((d = blob_find(b, n, "TITL", &sz)) && sz >= 4) {
 		int rows = (int) rd32(d);
-		if (rows > 0 && rows <= 32 && sz == 4 + (size_t) GBA_W * rows * 4) memcpy(mapTitle, d + 4, sz - 4), mapTitleN = rows;
+		if (rows > 0 && rows <= 32 && sz == 4 + (size_t) SCREEN_W * rows * 4) memcpy(mapTitle, d + 4, sz - 4), mapTitleN = rows;
 	}
 	if (hudProf && hudProf->hud.held.y1 && (d = blob_find(b, n, "HELD", &sz)) && sz >= 4) {
 		int rows = (int) rd32(d);
-		if (rows > 0 && rows <= GBA_H && sz == 4 + (size_t) GBA_W * rows * 4) memcpy(heldPic, d + 4, sz - 4), heldN = rows;
+		if (rows > 0 && rows <= SCREEN_H && sz == 4 + (size_t) SCREEN_W * rows * 4) memcpy(heldPic, d + 4, sz - 4), heldN = rows;
 	}
 	if (hudProf && hudProf->hud.held.over.x1 && (d = blob_find(b, n, "HNUM", &sz)) && sz >= 8) {
 		int w = (int) rd32(d), hh = (int) rd32(d + 4);
-		if (w > 0 && hh > 0 && w * hh <= GBA_W * GBA_H && sz == 8 + (size_t) w * hh * 4) memcpy(heldNum, d + 8, sz - 8), heldNumW = w, heldNumH = hh;
+		if (w > 0 && hh > 0 && w * hh <= SCREEN_W * SCREEN_H && sz == 8 + (size_t) w * hh * 4) memcpy(heldNum, d + 8, sz - 8), heldNumW = w, heldNumH = hh;
 	}
 	if (hudProf && hudProf->hud.card.tile && (d = blob_find(b, n, "CARD", &sz)) && sz == 4 + sizeof(cardBest)) {
 		cardScore = (int) rd32(d);
@@ -5741,7 +5741,7 @@ static void screen_restore_apply(void) {
 }
 
 /* Save states, with the RetroAchievements progress beside them (<state>.ra;
- * for one in RetroArch's folder, in GBA DS's own: <state_dir>/retroarch/) */
+ * for one in RetroArch's folder, in PSX-DS's own: <state_dir>/retroarch/) */
 static const char* state_ra_side(const char* path) {
 	static char side[1200];
 	if (!state_is_retroarch(path)) return path;
@@ -5784,21 +5784,21 @@ static void state_rom_check(const char* path) {
 
 static StateFileKind stateLoadKind; /* (what the last state_load found: why it failed) */
 static bool state_load(const char* path) {
-	bool fromGbads = false;
-	stateLoadKind = emu_state_file_kind(&emu, path, &fromGbads);
+	bool fromPsxds = false;
+	stateLoadKind = emu_state_file_kind(&emu, path, &fromPsxds);
 	bool ok = emu_state_load_file(&emu, path);
 	{
-		static const char* const kinds[] = { "no file", "GBA DS's / mGBA's", "RetroArch's", "another emulator's", "unreadable" };
+		static const char* const kinds[] = { "no file", "PSX-DS's / SwanStation's", "RetroArch's", "another emulator's", "unreadable" };
 		fprintf(stderr, "load state: %s: %s (%s%s)\n", path, ok ? "loaded" : "not loaded", kinds[stateLoadKind],
-		        stateLoadKind == STATE_FILE_RETROARCH ? (fromGbads ? ", saved by GBA DS" : ", saved by RetroArch") : "");
+		        stateLoadKind == STATE_FILE_RETROARCH ? (fromPsxds ? ", saved by PSX-DS" : ", saved by RetroArch") : "");
 	}
 	stateWarned = false;
 	if (ok && !stateNoCheck) state_rom_check(path);
 	if (ok) {
-		/* (saved by RetroArch over one of GBA DS's: the progress kept with
+		/* (saved by RetroArch over one of PSX-DS's: the progress kept with
 		 * that one is another moment's, so achievements start over) */
 		const char* side = state_ra_side(path);
-		if (side != path && !fromGbads) {
+		if (side != path && !fromPsxds) {
 			char ra[1210];
 			snprintf(ra, sizeof(ra), "%s.ra", side);
 			remove(ra);
@@ -5821,7 +5821,7 @@ static bool state_load(const char* path) {
 }
 
 #ifdef __wasi__
-/* State Saver's GBA DS tab: states saved and loaded from the page, between frames */
+/* State Saver's PSX-DS tab: states saved and loaded from the page, between frames */
 static bool webPlaying;
 __attribute__((export_name("web_save_state"))) int web_save_state(const char* path) {
 	return webPlaying && state_save(path);
@@ -5842,7 +5842,7 @@ __attribute__((export_name("web_load_state"))) int web_load_state(const char* pa
 /* README.txt in the bug-reports folder: how to send a report (written with
  * the first report, if it isn't there; replaced when the text changes) */
 static const char bugReadme[] =
-	"GBA DS bug reports\n"
+	"PSX-DS bug reports\n"
 	"==================\n"
 	"\n"
 	"Each zip in this folder is one bug report, saved by the quick bar's bug\n"
@@ -5854,7 +5854,7 @@ static const char bugReadme[] =
 	"  - GAME-DATE-keys.txt        every button you pressed in between\n"
 	"  - GAME-DATE-info.txt        your note (if you typed one), your device,\n"
 	"                              system, screens and settings, and the end\n"
-	"                              of GBA DS's log\n"
+	"                              of PSX-DS's log\n"
 	"\n"
 	"In the pinball games' two-screen view, also what both screens showed\n"
 	"(GAME-DATE-tall.png, with the two extra copies' own pictures), the\n"
@@ -5875,7 +5875,7 @@ static const char bugReadme[] =
 	"   restarting, play on for 10 seconds before making one.\n"
 	"2. Copy the zip from this folder to a computer or phone.\n"
 	"3. Open a new issue on GitHub:\n"
-	"   https://github.com/kyannon/gba-ds/issues/new\n"
+	"   https://github.com/Gin649/PSX-DS/issues/new\n"
 	"   (you need a free GitHub account).\n"
 	"4. Give it a short title: the game and what's wrong, for example\n"
 	"   \"F-Zero: GP Legend: the course map flickers\".\n"
@@ -5896,11 +5896,11 @@ static const char bugReadme[] =
 	"  - Whether it happens every time, and how to make it happen again.\n"
 	"  - Photos or screenshots of both screens, if it's something you see.\n"
 	"    A photo of the device is fine.\n"
-	"  - Anything you changed in Settings or gba-ds.cfg, and whether cheats\n"
+	"  - Anything you changed in Settings or psx-ds.cfg, and whether cheats\n"
 	"    were on.\n"
 	"\n"
-	"If GBA DS crashes, won't start, or a game won't load (so there's no way\n"
-	"to make a report), attach gba-ds.log instead: it's in the GBA DS folder,\n"
+	"If PSX-DS crashes, won't start, or a game won't load (so there's no way\n"
+	"to make a report), attach psx-ds.log instead: it's in the PSX-DS folder,\n"
 	"next to this bug-reports folder. Say which system you use (ROCKNIX,\n"
 	"BananaOS, Anbernic's own system, Android) and which device.\n"
 	"\n"
@@ -6033,7 +6033,7 @@ static void read_line(const char* path, char* out, size_t size) {
 static void log_path(char* out, size_t size) {
 	out[0] = 0;
 #ifdef __ANDROID__
-	if (android_home()) snprintf(out, size, "%s/gba-ds.log", android_home());
+	if (android_home()) snprintf(out, size, "%s/psx-ds.log", android_home());
 #else
 	struct stat st;
 	if (fstat(2, &st) != 0 || !S_ISREG(st.st_mode)) return;
@@ -6042,11 +6042,11 @@ static void log_path(char* out, size_t size) {
 #endif
 }
 
-/* The report's -info.txt: the device and system, GBA DS's settings, the
+/* The report's -info.txt: the device and system, PSX-DS's settings, the
  * game and the end of the log (without lines about passwords or tokens). */
 static void bug_info(Text* t, const char* date, uint64_t back) {
-#ifdef GBADS_VERSION
-	text_add(t, "GBA DS %s bug report, %s\n\n", GBADS_VERSION, date);
+#ifdef PSXDS_VERSION
+	text_add(t, "PSX-DS %s bug report, %s\n\n", PSXDS_VERSION, date);
 #endif
 	text_add(t, "== Device\n");
 	char line[256];
@@ -6100,7 +6100,7 @@ static void bug_info(Text* t, const char* date, uint64_t back) {
 		if (fails) text_add(t, "Last capture: failed (%d in a row): %s\n", fails, why ? why : "?");
 		else text_add(t, "Last capture: ok\n");
 	}
-	text_add(t, "Controls: %s. Cheats on: %d. RetroAchievements: %s\n", ctlProf ? ctl_name(ctlMode) : "GBA", cheats_on(&cheats),
+	text_add(t, "Controls: %s. Cheats on: %d. RetroAchievements: %s\n", ctlProf ? ctl_name(ctlMode) : "PS1", cheats_on(&cheats),
 	         ra_enabled() ? "signed in" : "off");
 	text_add(t, "The rewound state is %llu frames before the other\n", (unsigned long long) back);
 	/* (issue #39: slots 0-9 and the resume point shared with RetroArch, and where) */
@@ -6108,7 +6108,7 @@ static void bug_info(Text* t, const char* date, uint64_t back) {
 		text_add(t, "Save states: shared with RetroArch in %s (%s, %s); slot %d\n", gp.raDir, cfg->raStateDir[0] ? "chosen by hand" : "from its settings",
 		         gp.raCompress ? "compressed" : "uncompressed", stateSlot);
 	else
-		text_add(t, "Save states: GBA DS's own%s; slot %d\n", !strcmp(cfg->stateFolder, "retroarch") ? " (shared with RetroArch, but its folder wasn't found)" : "",
+		text_add(t, "Save states: PSX-DS's own%s; slot %d\n", !strcmp(cfg->stateFolder, "retroarch") ? " (shared with RetroArch, but its folder wasn't found)" : "",
 		         stateSlot);
 
 	text_add(t, "\n== Settings\n");
@@ -6213,18 +6213,18 @@ static bool bug_report(char* out, size_t outSize) {
 	double fps60 = GBA_FPS;
 	char date[64], k[64];
 	strftime(date, sizeof(date), "%Y-%m-%d %H:%M:%S", &tm);
-#ifdef GBADS_VERSION
-	const char* version = GBADS_VERSION;
+#ifdef PSXDS_VERSION
+	const char* version = PSXDS_VERSION;
 #else
 	const char* version = "?";
 #endif
-	text_add(&t, "# GBA DS bug report, %s\n", date);
-	text_add(&t, "# GBA DS %s, %s (%s%s%s)\n", version, gp.base, emu.gameCode, strcmp(subCode, emu.gameCode) ? ", playing " : "",
+	text_add(&t, "# PSX-DS bug report, %s\n", date);
+	text_add(&t, "# PSX-DS %s, %s (%s%s%s)\n", version, gp.base, emu.gameCode, strcmp(subCode, emu.gameCode) ? ", playing " : "",
 	         strcmp(subCode, emu.gameCode) ? subCode : "");
-	text_add(&t, "# Controls: %s. Cheats on: %d.\n", ctlProf ? ctl_name(ctlMode) : "GBA", cheats_on(&cheats));
+	text_add(&t, "# Controls: %s. Cheats on: %d.\n", ctlProf ? ctl_name(ctlMode) : "PS1", cheats_on(&cheats));
 	text_add(&t, "# %s is the game %.1f seconds (%llu frames) before %s.\n", name[1], (to - from) / fps60,
 	         (unsigned long long) (to - from), name[0]);
-	text_add(&t, "# The keys the game got from then on (after GBA DS's button layouts), by frame:\n#\n");
+	text_add(&t, "# The keys the game got from then on (after PSX-DS's button layouts), by frame:\n#\n");
 	text_add(&t, "#  frame    time  event\n");
 	unsigned prev = 0;
 	uint64_t since[10] = { 0 };
@@ -6300,19 +6300,19 @@ static bool bug_report(char* out, size_t outSize) {
 		snprintf(xname[2], sizeof(xname[2]), "%s-copy0.state", base);
 		snprintf(xname[3], sizeof(xname[3]), "%s-copy1.state", base);
 		for (int i = 0; i < 4; ++i) snprintf(xtmp[i], sizeof(xtmp[i]), "%s/%s", dir, xname[i]);
-		static uint32_t sheet[GBA_W * 3 * GBA_H * 2];
-		for (int y = 0; y < 2 * GBA_H; ++y) {
-			for (int x = 0; x < GBA_W; ++x) {
-				uint32_t* row = &sheet[y * GBA_W * 3];
-				row[x] = (y < GBA_H ? tallTop[y * GBA_W + x] : tallBot[(y - GBA_H) * GBA_W + x]) | 0xFF000000;
-				row[GBA_W + x] = y < GBA_H ? twins[0].pic[y * GBA_W + x] | 0xFF000000 : 0xFF000000;
-				row[2 * GBA_W + x] = y < GBA_H ? twins[1].pic[y * GBA_W + x] | 0xFF000000 : 0xFF000000;
+		static uint32_t sheet[SCREEN_W * 3 * SCREEN_H * 2];
+		for (int y = 0; y < 2 * SCREEN_H; ++y) {
+			for (int x = 0; x < SCREEN_W; ++x) {
+				uint32_t* row = &sheet[y * SCREEN_W * 3];
+				row[x] = (y < SCREEN_H ? tallTop[y * SCREEN_W + x] : tallBot[(y - SCREEN_H) * SCREEN_W + x]) | 0xFF000000;
+				row[SCREEN_W + x] = y < SCREEN_H ? twins[0].pic[y * SCREEN_W + x] | 0xFF000000 : 0xFF000000;
+				row[2 * SCREEN_W + x] = y < SCREEN_H ? twins[1].pic[y * SCREEN_W + x] | 0xFF000000 : 0xFF000000;
 			}
 		}
-		bool xok = stbi_write_png(xtmp[0], GBA_W * 3, GBA_H * 2, 4, sheet, GBA_W * 3 * 4) != 0;
+		bool xok = stbi_write_png(xtmp[0], SCREEN_W * 3, SCREEN_H * 2, 4, sheet, SCREEN_W * 3 * 4) != 0;
 		FILE* f = fopen(xtmp[1], "wb");
 		if (f) {
-			fprintf(f, "# GBA DS live view, the last %u frames (top/bottom screen and the copies' rows; game.c update_tall)\n",
+			fprintf(f, "# PSX-DS live view, the last %u frames (top/bottom screen and the copies' rows; game.c update_tall)\n",
 			        tallLogN < TALL_LOG ? tallLogN : TALL_LOG);
 			for (unsigned i = tallLogN > TALL_LOG ? tallLogN - TALL_LOG : 0; i < tallLogN; ++i) fprintf(f, "%s\n", tallLog[i % TALL_LOG]);
 			fclose(f);
@@ -6485,16 +6485,16 @@ static const uint32_t* hud_over_map(const uint32_t* px) {
 		int x0 = mv->how == 'C' ? mv->x - (pc->w - 1) / 2 : mv->how == 'R' ? mv->x - pc->w + 1 : mv->x;
 		int y0 = mv->vhow == 'M' ? mv->y - (pc->h - 1) / 2 : mv->vhow == 'B' ? mv->y - pc->h + 1 : mv->y;
 		if (mv->asIs) {
-			x0 = pc->sx + (mapW - GBA_W) / 2, y0 = pc->sy + (mapH - GBA_H) / 2;
+			x0 = pc->sx + (mapW - SCREEN_W) / 2, y0 = pc->sy + (mapH - SCREEN_H) / 2;
 			if (mv->asIsBottom && pc->atBottom && !hudAlt) y0 = mapH - pc->h;
 		}
 		if (mv->wide) {
 			/* as wide as the picture: each pixel from the piece's, scaled */
-			int sw = pc->w * mapW / GBA_W, sh = pc->h * mapW / GBA_W;
-			x0 = pc->sx * mapW / GBA_W;
+			int sw = pc->w * mapW / SCREEN_W, sh = pc->h * mapW / SCREEN_W;
+			x0 = pc->sx * mapW / SCREEN_W;
 			for (int y = 0; y < sh; ++y) {
 				for (int x = 0; x < sw; ++x) {
-					uint32_t c = pc->px[(y * GBA_W / mapW) * pc->w + x * GBA_W / mapW];
+					uint32_t c = pc->px[(y * SCREEN_W / mapW) * pc->w + x * SCREEN_W / mapW];
 					int nx = x0 + x, ny = y0 + y;
 					if (!c || nx < 0 || ny < 0 || nx >= mapW || ny >= mapH) continue;
 					over[ny * mapW + nx] = c;
@@ -6532,9 +6532,9 @@ static const uint32_t* hud_over_map(const uint32_t* px) {
 				 * go where it is */
 				memcpy(orig, over, (size_t) mapW * mapH * 4);
 				for (int ny = 0; ny < mapH; ++ny) {
-					int ly = ny * GBA_H / mapH - pc->sy;
+					int ly = ny * SCREEN_H / mapH - pc->sy;
 					for (int nx = 0; nx < mapW; ++nx) {
-						int lx = nx * GBA_W / mapW - pc->sx;
+						int lx = nx * SCREEN_W / mapW - pc->sx;
 						uint32_t c = lx >= 0 && ly >= 0 && lx < pc->w && ly < pc->h ? pc->px[ly * pc->w + lx] : 0;
 						if (c && (c & 0xFFFFFF) == 0) over[ny * mapW + nx] = shade_px(orig[ny * mapW + nx]);
 					}
@@ -6731,17 +6731,17 @@ static bool update_still(void) {
  * kept on its own) */
 static void map_show_new(bool fresh) {
 	mapInactive = false;
-	if (fresh && hudProf && hudProf->hud.held.over.x1 && mapRes.frames[0] && mapRes.w * mapRes.h <= GBA_W * GBA_H) {
+	if (fresh && hudProf && hudProf->hud.held.over.x1 && mapRes.frames[0] && mapRes.w * mapRes.h <= SCREEN_W * SCREEN_H) {
 		/* hud.held.over: the number, laid over the held picture */
 		heldNumW = mapRes.w, heldNumH = mapRes.h;
 		memcpy(heldNum, mapRes.frames[0], (size_t) mapRes.w * mapRes.h * 4);
 		hudLogoBelowDone = false;
 	}
-	if (fresh && hudProf && hudProf->hud.mapTitleRows && mapRes.w == GBA_W && mapRes.frames[0]) {
+	if (fresh && hudProf && hudProf->hud.mapTitleRows && mapRes.w == SCREEN_W && mapRes.frames[0]) {
 		/* the level list's title row (SMA-7), held for the level */
 		if (!mapTitleN) hudLogoBelowDone = false; /* (the logo moves down under it) */
 		mapTitleN = SDL_min(hudProf->hud.mapTitleRows, 32);
-		for (int i = 0; i < GBA_W * mapTitleN; ++i) mapTitle[i] = mapRes.frames[0][i] | 0xFF000000;
+		for (int i = 0; i < SCREEN_W * mapTitleN; ++i) mapTitle[i] = mapRes.frames[0][i] | 0xFF000000;
 	}
 	mapShownIdx = -1;
 	/* (pages, a few seconds each: Fire Emblem's unit status; they
@@ -6765,7 +6765,7 @@ static bool liveOn;
 
 static bool frame_is_dark(const uint32_t* fb) {
 	int bright = 0, total = 0;
-	for (int i = 0; i < GBA_W * GBA_H; i += 7) {
+	for (int i = 0; i < SCREEN_W * SCREEN_H; i += 7) {
 		uint32_t c = fb[i];
 		int lum = ((c & 0xFF) + ((c >> 8) & 0xFF) * 2 + ((c >> 16) & 0xFF)) >> 2;
 		bright += lum > 40;
@@ -6779,7 +6779,7 @@ static int game_screen(void) {
 	return cfg->swap ? 1 : 0;
 }
 
-/* Frame pacing. The GBA runs at 59.73 frames a second; a 60 Hz screen then
+/* Frame pacing. The PS1 runs at 59.73 frames a second; a 60 Hz screen then
  * shows one frame twice about every 3.7 s (a small, regular stutter).
  * "Match Display Rate" runs the game at the display's rate instead when it's
  * within 1.5% (60 Hz: 0.46% faster, sound resampled to match, a pitch change
@@ -6792,7 +6792,7 @@ static double audioSpeed = 1.0; /* emulated time per real time */
 /* ---- Keeping the game and its sound going while a frame's present is held
  * up (issue #50). On one player's RG DS Plus (ROCKNIX, a second SD card),
  * presenting a frame stalled for half a second every few seconds: the
- * graphics driver waiting for sway to give a buffer back. Nothing in GBA DS
+ * graphics driver waiting for sway to give a buffer back. Nothing in PSX-DS
  * can make the screen take the frame sooner, but the emulator isn't needed
  * for presenting: once a present has taken 1.5 frames, this thread runs the
  * game's frames on time with the last keys held (run_frame, as the frame
@@ -6940,9 +6940,9 @@ static int keeper_disarm(void) { return 0; }
 static void keeper_stop(void) {}
 #endif
 /* Matched, a frame that misses its refresh waits for the next one, and the
- * time is never made up: the game slows down (the GBA's rate catches up
+ * time is never made up: the game slows down (the PS1's rate catches up
  * after a slow frame). A game that keeps missing (three seconds in a row
- * with 3 or more) goes back to the GBA's rate until the setting is turned
+ * with 3 or more) goes back to the PS1's rate until the setting is turned
  * on again or the game is started again (pacedFallback). */
 static int pacedMisses, pacedMissSecs;
 
@@ -6954,11 +6954,11 @@ static void pacing_update(void) {
 	frameSec = 1.0 / (pacedHz > 0 ? pacedHz : GBA_FPS);
 	audioSpeed = pacedHz > 0 ? pacedHz / GBA_FPS : 1.0;
 	fprintf(stderr, "frame pacing: display %.3f Hz, game %.3f frames a second (%s)\n", hz, 1.0 / frameSec,
-	        pacedHz > 0 ? "matched to the display" : cfg->matchDisplay && pacedFallback ? "the GBA's rate: frames kept missing the display's refresh" :
-	        cfg->matchDisplay ? "display too far off to match" : "the GBA's rate");
+	        pacedHz > 0 ? "matched to the display" : cfg->matchDisplay && pacedFallback ? "the PS1's rate: frames kept missing the display's refresh" :
+	        cfg->matchDisplay ? "display too far off to match" : "the PS1's rate");
 }
 
-/* Rewind (hold L2): mGBA's rewind buffer, a state every second frame,
+/* Rewind (hold L2): SwanStation's rewind buffer, a state every second frame,
  * rewind_seconds long (default 30 s: 900 states, each kept as its
  * difference from the next, a few MB). */
 static int rewindTick;
@@ -6973,7 +6973,7 @@ static void rewind_setup(void) {
 	fprintf(stderr, "rewind: %d s (%d states)\n", secs, secs * 30);
 }
 
-/* ff_speed as gba-ds.cfg writes it: a number, or max (0, as atoi reads it) */
+/* ff_speed as psx-ds.cfg writes it: a number, or max (0, as atoi reads it) */
 static const char* ff_speed_name(const Config* c) {
 	static char s[12];
 	if (c->ffSpeed <= 0) return "max";
@@ -7000,7 +7000,7 @@ void prefs_save(Config* cfg) {
 		{ "bezel_inner", cfg->bezelInner },
 		{ "bezel_outer", cfg->bezelOuter },
 	};
-	config_kv_update(prefs, "# written by gba-ds's menus; overrides gba-ds.cfg", 4, kv);
+	config_kv_update(prefs, "# written by psx-ds's menus; overrides psx-ds.cfg", 4, kv);
 }
 
 static bool gameTexAll = true; /* upload the game's frame to every view next time */
@@ -7009,7 +7009,7 @@ static void swap_screens(void) {
 	/* the game moves to the other view, whose copy of the frame may be old
 	 * (frames go only where the game is shown; the menu uploads none) */
 	if (emu.fb) {
-		for (int i = 0; i < nViews; ++i) ui_update_texture(gameTex[i], emu.fb, GBA_W * 4);
+		for (int i = 0; i < nViews; ++i) ui_update_texture(gameTex[i], emu.fb, SCREEN_W * 4);
 	}
 	if (nScreens < 2) {
 		singleShowsMap = !singleShowsMap;
@@ -7031,7 +7031,7 @@ static void set_shader(int sh) {
 }
 
 /* ---- hotkeys (hotkeys.c): the hotkey button (HOME, SELECT, START or L3)
- * held with an action's button (Settings > Hotkeys, gba-ds.cfg).
+ * held with an action's button (Settings > Hotkeys, psx-ds.cfg).
  * SELECT or START as the hotkey still reach the game when tapped alone;
  * L3 tapped alone opens the quick menu, as it does when it isn't the hotkey. */
 static void hotkeys_setup(void) {
@@ -7104,13 +7104,13 @@ static void load_overlay(int s, int which) {
 	}
 }
 
-/* GBA DS's own bezel round screen s's picture (bezel.c): in the player's
+/* PSX-DS's own bezel round screen s's picture (bezel.c): in the player's
  * colours and with their logo setting (Overlays: Generated; while the
  * colour picker is open, its colour as it's picked), or in the defaults
  * (a screen without a PNG in Overlays: Custom). Nothing where the picture
  * fills the screen. */
 static void draw_bezel(int s, const char* mode, bool defaults) {
-	SDL_Rect r = ui_image_rect(s, GBA_W, GBA_H, mode), sr = screens[s].rect;
+	SDL_Rect r = ui_image_rect(s, SCREEN_W, SCREEN_H, mode), sr = screens[s].rect;
 	/* (Zoom: the part on the screen) */
 	int x0 = SDL_max(r.x, 0), y0 = SDL_max(r.y, 0), x1 = SDL_min(r.x + r.w, sr.w), y1 = SDL_min(r.y + r.h, sr.h);
 	if (x0 <= 0 && y0 <= 0 && x1 >= sr.w && y1 >= sr.h) return;
@@ -7179,7 +7179,7 @@ static void draw_osd(void) {
 	int s = ui_touch_screen();
 	SDL_Rect r = screens[s].rect;
 	bool gameHere = nScreens == 1 || s == game_screen() || !((mc || logoOnly) && cfg->map);
-	SDL_Rect img = ui_image_rect(s, GBA_W, GBA_H, gameHere ? cfg->scale : cfg->mapScale);
+	SDL_Rect img = ui_image_rect(s, SCREEN_W, SCREEN_H, gameHere ? cfg->scale : cfg->mapScale);
 	int gap = r.h - (img.y + img.h);
 	int fpx = small_text_px(s, img.y < gap ? img.y : gap);
 	int fy = gap >= 7 * fpx + 2 ? img.y + img.h + (gap - 7 * fpx) / 2 : r.h - fpx * 9;
@@ -7189,7 +7189,7 @@ static void draw_osd(void) {
 }
 
 /* The game's logo at its own size (GEN-1) onto a cw x ch canvas: k canvas
- * pixels to a logo pixel (one GBA pixel each for an extracted logo),
+ * pixels to a logo pixel (one PS1 pixel each for an extracted logo),
  * centred, blended over what's there at `alpha` (255: opaque; the logo
  * alone, with nothing live to show, at half: LOGO_IDLE); with `top` (a HUD
  * above it), centred in the rows below that. A user's own logo too big
@@ -7203,14 +7203,14 @@ static bool logo_draw(uint32_t* px, int cw, int ch, int k, int top, int alpha) {
 	int room = ch - top;
 	if (room <= 0) {
 		/* (no room below a HUD that fills the screen: Mega Man Battle
-		 * Network's custom screen, hud.rows GBA_H) */
+		 * Network's custom screen, hud.rows SCREEN_H) */
 		SDL_FreeSurface(lg);
 		return false;
 	}
 	int w = SDL_max(1, lg->w * k / sub), h = SDL_max(1, lg->h * k / sub);
 	if (sub > k) {
 		/* a scraped logo at full resolution, onto a canvas with fewer
-		 * pixels per GBA pixel: averaged down to them (GEN-11) */
+		 * pixels per PS1 pixel: averaged down to them (GEN-11) */
 		SDL_Surface* sm = ui_resample(lg, w, h);
 		if (sm) SDL_FreeSurface(lg), lg = sm;
 	}
@@ -7241,9 +7241,9 @@ static bool logo_draw(uint32_t* px, int cw, int ch, int k, int top, int alpha) {
 	return true;
 }
 
-/* The game's logo as a GBA screen would show it: centred on dark grey in a
+/* The game's logo as a PS1 screen would show it: centred on dark grey in a
  * 240x160 picture, at half strength (nothing live to show), drawn with the second screen's scaling and the LCD grid.
- * Logos extracted from the ROM are at GBA resolution; a user's own logo
+ * Logos extracted from the ROM are at PS1 resolution; a user's own logo
  * that's bigger stays a high-resolution image (logoCanvasTex NULL). */
 static void make_logo_canvas(void) {
 	ui_free_image(logoCanvasTex);
@@ -7252,13 +7252,13 @@ static void make_logo_canvas(void) {
 	SDL_Surface* lg = ui_logo_surface(cfg, romPath, emu.gameCode, &pixelArt, &sub);
 	if (!lg) return;
 	logoSub = sub;
-	bool big = lg->w > GBA_W * sub || lg->h > GBA_H * sub;
+	bool big = lg->w > SCREEN_W * sub || lg->h > SCREEN_H * sub;
 	SDL_FreeSurface(lg);
 	if (big) return;
 	if (sub > 1) {
 		/* a scraped logo at full resolution (GEN-11): the same picture at
-		 * sub pixels per GBA pixel, smoothly scaled to the GBA picture's place */
-		int cw = GBA_W * sub, ch = GBA_H * sub;
+		 * sub pixels per PS1 pixel, smoothly scaled to the PS1 picture's place */
+		int cw = SCREEN_W * sub, ch = SCREEN_H * sub;
 		uint32_t* big4 = malloc((size_t) cw * ch * 4);
 		if (!big4) return;
 		for (int i = 0; i < cw * ch; ++i) big4[i] = SCREEN_GREY;
@@ -7273,26 +7273,26 @@ static void make_logo_canvas(void) {
 		free(big4);
 		return;
 	}
-	static uint32_t px[GBA_W * GBA_H];
-	for (int i = 0; i < GBA_W * GBA_H; ++i) px[i] = SCREEN_GREY;
-	logo_draw(px, GBA_W, GBA_H, 1, 0, LOGO_IDLE);
+	static uint32_t px[SCREEN_W * SCREEN_H];
+	for (int i = 0; i < SCREEN_W * SCREEN_H; ++i) px[i] = SCREEN_GREY;
+	logo_draw(px, SCREEN_W, SCREEN_H, 1, 0, LOGO_IDLE);
 	for (int i = 0; i < nViews; ++i) {
-		logoCanvasTex[i] = SDL_CreateTexture(views[i].ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, GBA_W, GBA_H);
+		logoCanvasTex[i] = SDL_CreateTexture(views[i].ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, SCREEN_W, SCREEN_H);
 		if (!logoCanvasTex[i]) continue;
 		SDL_SetTextureBlendMode(logoCanvasTex[i], SDL_BLENDMODE_NONE);
-		ui_update_texture(logoCanvasTex[i], px, GBA_W * 4);
+		ui_update_texture(logoCanvasTex[i], px, SCREEN_W * 4);
 	}
 }
 
 /* profile.combat's picture (and hud.logoUnder's): the logo as on any
- * other second screen (GEN-1), at a GBA pixel per GBA pixel of the map
+ * other second screen (GEN-1), at a PS1 pixel per PS1 pixel of the map
  * picture. */
 static void make_combat_canvas(void) {
 	combatMade = true;
 	uint32_t* px = malloc((size_t) mapW * mapH * 4);
 	if (!px) return;
 	for (int i = 0; i < mapW * mapH; ++i) px[i] = SCREEN_GREY;
-	logo_draw(px, mapW, mapH, SDL_max(1, mapW / GBA_W), 0, LOGO_IDLE);
+	logo_draw(px, mapW, mapH, SDL_max(1, mapW / SCREEN_W), 0, LOGO_IDLE);
 	for (int i = 0; i < nViews; ++i) {
 		if (combatTex[i]) ui_update_texture(combatTex[i], px, mapW * 4);
 	}
@@ -7311,10 +7311,10 @@ static void draw_game(void) {
 				if (overlay_on(s)) draw_overlay(s, 1);
 				continue;
 			}
-			ui_image_pixels(s, gameTex, GBA_W, GBA_H, cfg->scale, SHADER_ON);
+			ui_image_pixels(s, gameTex, SCREEN_W, SCREEN_H, cfg->scale, SHADER_ON);
 			if (hudProf && hudOn && hudAlt && hudProf->hud.alt.dimGame) {
 				/* (the phase banner moved to the other screen) */
-				SDL_Rect img = ui_image_rect(s, GBA_W, GBA_H, cfg->scale);
+				SDL_Rect img = ui_image_rect(s, SCREEN_W, SCREEN_H, cfg->scale);
 				ui_fill(s, img, (SDL_Color) { 0, 0, 0, 150 });
 			}
 			if (overlay_on(s)) draw_overlay(s, 0);
@@ -7322,7 +7322,7 @@ static void draw_game(void) {
 				/* sized to sit in the empty band above the picture */
 				char buf[48];
 				snprintf(buf, sizeof(buf), "%.1f FPS  %d%%", fps, (int) (speedPct + 0.5));
-				SDL_Rect img = ui_image_rect(s, GBA_W, GBA_H, cfg->scale);
+				SDL_Rect img = ui_image_rect(s, SCREEN_W, SCREEN_H, cfg->scale);
 				int gap = img.y;
 				int fpx = small_text_px(s, gap);
 				int fy = gap >= 7 * fpx + 2 ? (gap - 7 * fpx) / 2 : fpx * 2;
@@ -7340,7 +7340,7 @@ static void draw_game(void) {
 			ui_fill(s, (SDL_Rect) { 0, 0, r.w, r.h }, borderColor);
 			ui_image_pixels(s, combatTex, mapW, mapH, cfg->mapScale, SHADER_ON);
 		} else if (hudShown && !logoForced) {
-			/* the HUD picture is at 2x: a grid cell per GBA pixel */
+			/* the HUD picture is at 2x: a grid cell per PS1 pixel */
 			ui_fill(s, (SDL_Rect) { 0, 0, r.w, r.h }, borderColor);
 			ui_image_pixels(s, hudTex, HUD_CW, HUD_CH, cfg->mapScale, SHADER_ON ? 2 : 0);
 		} else if (mapShownIdx >= 0 && !logoForced) {
@@ -7348,21 +7348,21 @@ static void draw_game(void) {
 			ui_image_pixels(s, mapTex, mapW, mapH, cfg->mapScale, SHADER_ON);
 		} else if ((logoCanvasTex[0] || logoCanvasTex[1]) && logoSub > 1) {
 			/* a scraped logo at full resolution (GEN-11): its picture made at
-			 * LOGO_SUB pixels per GBA pixel, onto where the GBA picture goes */
-			SDL_Rect area = ui_image_rect(s, GBA_W, GBA_H, cfg->mapScale);
-			ui_image(s, logoCanvasTex, GBA_W * logoSub, GBA_H * logoSub, "stretch", &area);
+			 * LOGO_SUB pixels per PS1 pixel, onto where the PS1 picture goes */
+			SDL_Rect area = ui_image_rect(s, SCREEN_W, SCREEN_H, cfg->mapScale);
+			ui_image(s, logoCanvasTex, SCREEN_W * logoSub, SCREEN_H * logoSub, "stretch", &area);
 		} else if (logoCanvasTex[0] || logoCanvasTex[1]) {
 			/* no map yet (title screen, intro...): the game's logo, as if the
-			 * game drew it on a second GBA screen */
-			ui_image_pixels(s, logoCanvasTex, GBA_W, GBA_H, cfg->mapScale, SHADER_ON);
+			 * game drew it on a second PS1 screen */
+			ui_image_pixels(s, logoCanvasTex, SCREEN_W, SCREEN_H, cfg->mapScale, SHADER_ON);
 		} else if (logoTex[0] || logoTex[1]) {
 			/* a user's high-resolution logo: fitted to where the picture goes */
-			SDL_Rect area = ui_image_rect(s, GBA_W, GBA_H, cfg->mapScale);
+			SDL_Rect area = ui_image_rect(s, SCREEN_W, SCREEN_H, cfg->mapScale);
 			ui_image(s, logoTex, logoW, logoH, logoPixel ? "integer" : "fit", &area);
 		} else if (logoOnly) {
 			/* no logo to show (none extracted for this game yet): its name */
 			const MapProfile* tp = profile_find(emu.gameCode);
-			SDL_Rect area = ui_image_rect(s, GBA_W, GBA_H, cfg->mapScale);
+			SDL_Rect area = ui_image_rect(s, SCREEN_W, SCREEN_H, cfg->mapScale);
 			int in = area.w / 10;
 			area = (SDL_Rect) { area.x + in, area.y + in, area.w - in * 2, area.h - in * 2 };
 			if (tp) ui_title_block(s, area, tp->title, (int) (ui_px(s) * 14), (SDL_Color) { 236, 236, 244, 255 });
@@ -7409,7 +7409,7 @@ static void open_menu(void) {
  * games while the game runs (cfg has this game's put over them). */
 static Config uniCfg;
 static const char* const gameHeader = "# this game's own settings: they win over the ones for all games";
-static const char* const prefsHeader = "# written by gba-ds's menus; overrides gba-ds.cfg";
+static const char* const prefsHeader = "# written by psx-ds's menus; overrides psx-ds.cfg";
 
 static void game_keys_reload(void) {
 	nGameKeys = config_kv_keys(gp.settings, 48, gameKeys);
@@ -7455,7 +7455,7 @@ static void setting_applied(const Setting* st) {
 		ghostHave = false;
 	} else if (!strcmp(k, "swap")) {
 		if (emu.fb) {
-			for (int i = 0; i < nViews; ++i) ui_update_texture(gameTex[i], emu.fb, GBA_W * 4);
+			for (int i = 0; i < nViews; ++i) ui_update_texture(gameTex[i], emu.fb, SCREEN_W * 4);
 		}
 	} else if (!strcmp(k, "screen_match") || !strcmp(k, "screen_placement")) {
 		ui_layout_pictures();
@@ -7473,7 +7473,7 @@ static void setting_applied(const Setting* st) {
 	} else if (!strcmp(k, "ab_swap") || !strncmp(k, "button_", 7)) {
 		fb_default();
 	} else if (!strcmp(k, "pinball_live")) {
-		snprintf(menuNote, sizeof(menuNote), tr("Takes effect after you close and restart GBA DS"));
+		snprintf(menuNote, sizeof(menuNote), tr("Takes effect after you close and restart PSX-DS"));
 	}
 }
 
@@ -7616,7 +7616,7 @@ static bool activate(int item, enum GameExit* exitTo) {
 		armedItem = item;
 		const char* lost = cfg->autoSave ? N_("your place is saved"): N_("unsaved progress is lost");
 		if (item == M_RESTART) snprintf(menuNote, sizeof(menuNote), tr("Choose it again to restart: unsaved progress is lost"));
-		else snprintf(menuNote, sizeof(menuNote), tr("Choose it again to close %s: %s"), item == M_EXIT ? "GBA DS" : tr("the game"), lost);
+		else snprintf(menuNote, sizeof(menuNote), tr("Choose it again to close %s: %s"), item == M_EXIT ? "PSX-DS" : tr("the game"), lost);
 		return false;
 	}
 	armedItem = -1;
@@ -7663,8 +7663,8 @@ static bool activate(int item, enum GameExit* exitTo) {
 			menuOpen = false;
 			return false;
 		} else if (stateLoadKind == STATE_FILE_OTHER_CORE) {
-			/* (RetroArch's, from another of its GBA cores: issue #39) */
-			/* (Settings > Save States says RetroArch's core has to be mGBA) */
+			/* (RetroArch's, from another of its PS1 cores: issue #39) */
+			/* (Settings > Save States says RetroArch's core has to be SwanStation) */
 			snprintf(menuNote, sizeof(menuNote), tr("Saved by another emulator: can't load it"));
 		} else if (stateLoadKind == STATE_FILE_UNREADABLE) {
 			snprintf(menuNote, sizeof(menuNote), tr("This state can't be read"));
@@ -7725,8 +7725,8 @@ static void take_screenshot(void) {
  * or for a compilation the game running in it: subCode): the map capture,
  * the HUD split, the fights' picture. */
 static void ss_setup(const char* rom, const char* code) {
-	mapW = GBA_W;
-	mapH = GBA_H;
+	mapW = SCREEN_W;
+	mapH = SCREEN_H;
 	memset(&mapRes, 0, sizeof(mapRes));
 	mapShownIdx = -1;
 	stillValid = false;
@@ -7839,11 +7839,11 @@ static Uint32 lastLoop; /* the last pass of the play loop (SDL_GetTicks) */
 static void rebuild_textures(void) {
 	for (int i = 0; i < nViews; ++i) {
 		if (gameTex[i]) SDL_DestroyTexture(gameTex[i]);
-		gameTex[i] = SDL_CreateTexture(views[i].ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, GBA_W, GBA_H);
+		gameTex[i] = SDL_CreateTexture(views[i].ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, SCREEN_W, SCREEN_H);
 		if (gameTex[i]) SDL_SetTextureBlendMode(gameTex[i], SDL_BLENDMODE_NONE);
 	}
 	ss_textures();
-	if (emu.fb) for (int i = 0; i < nViews; ++i) ui_update_texture(gameTex[i], emu.fb, GBA_W * 4);
+	if (emu.fb) for (int i = 0; i < nViews; ++i) ui_update_texture(gameTex[i], emu.fb, SCREEN_W * 4);
 	if (mapShownIdx >= 0) {
 		int idx = mapShownIdx;
 		overDirty = true;
@@ -7966,7 +7966,7 @@ enum GameExit game_run(Config* c, const char* rom, bool fromLibrary) {
 static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary) {
 	cfg = c;
 	tallLiveAtStart = cfg->tallLive;
-	debug = getenv("GBADS_DEBUG") != NULL;
+	debug = getenv("PSXDS_DEBUG") != NULL;
 	romPath = rom, lastLoop = 0;
 	game_paths(cfg, rom, &gp);
 	ui_brightness(cfg->brightTop, cfg->brightBottom); /* (this game's own, if it has them) */
@@ -8012,7 +8012,7 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 	}
 	ss_setup(rom, subCode);
 	for (int i = 0; i < nViews; ++i) {
-		gameTex[i] = SDL_CreateTexture(views[i].ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, GBA_W, GBA_H);
+		gameTex[i] = SDL_CreateTexture(views[i].ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, SCREEN_W, SCREEN_H);
 		SDL_SetTextureBlendMode(gameTex[i], SDL_BLENDMODE_NONE);
 	}
 	ss_textures();
@@ -8100,8 +8100,8 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 		if (state_load(gp.autoState)) {
 			if (!stateWarned) ui_osd("Resumed. Tap or HOME for the menu");
 		} else if (stateLoadKind == STATE_FILE_OTHER_CORE) {
-			/* (RetroArch's automatic state, from another of its GBA cores) */
-			ui_osd_long("Not resumed: RetroArch's automatic state is from another of its GBA cores. To share states, set RetroArch's GBA core to mGBA.");
+			/* (RetroArch's automatic state, from another of its PS1 cores) */
+			ui_osd_long("Not resumed: RetroArch's automatic state is from another of its PlayStation cores. To share states, set RetroArch's PlayStation core to SwanStation.");
 		}
 	} else {
 		ui_osd("Tap the screen or press HOME for the menu");
@@ -8109,7 +8109,7 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 	if (cfg->barPinned) barOpen = true, barSince = SDL_GetTicks(); /* (pinned: up from the start) */
 	rewind_setup();
 
-	/* The device runs at a fixed rate. The GBA's own rate follows the game's
+	/* The device runs at a fixed rate. The PS1's own rate follows the game's
 	 * sound settings (32768 Hz at power-on, 65536 Hz once Zero Mission is
 	 * running...) and can change at any moment, so samples go through a
 	 * converter that is rebuilt whenever it does. Opening the device at the
@@ -8118,9 +8118,9 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 	want.freq = 48000;
 	want.format = AUDIO_S16SYS;
 	want.channels = 2;
-	/* GBADS_AUDIO_SAMPLES: testing only (SDL's dummy driver keeps exact time
+	/* PSXDS_AUDIO_SAMPLES: testing only (SDL's dummy driver keeps exact time
 	 * only when the buffer is a whole number of milliseconds, e.g. 480) */
-	want.samples = getenv("GBADS_AUDIO_SAMPLES") ? atoi(getenv("GBADS_AUDIO_SAMPLES")) : 512;
+	want.samples = getenv("PSXDS_AUDIO_SAMPLES") ? atoi(getenv("PSXDS_AUDIO_SAMPLES")) : 512;
 	SDL_AudioDeviceID audio = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
 #if !defined(__wasi__) && !defined(__ANDROID__)
 	if (!audio && getenv("AUDIODEV")) {
@@ -8166,8 +8166,8 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 	uint64_t audioQuietUntil = 0; /* no dry-queue counting before this frame: the sound was being started again */
 	uint64_t dryWindowStart = 0;
 	int dryQueueBefore = 1, dryEvents = 0;
-	/* testing only: GBADS_TEST_STARVE=1 throws away the sound of 20 frames in every 100 (after frame 200) */
-	const bool testStarve = getenv("GBADS_TEST_STARVE") && atoi(getenv("GBADS_TEST_STARVE"));
+	/* testing only: PSXDS_TEST_STARVE=1 throws away the sound of 20 frames in every 100 (after frame 200) */
+	const bool testStarve = getenv("PSXDS_TEST_STARVE") && atoi(getenv("PSXDS_TEST_STARVE"));
 
 	static int16_t samples[4096 * 2];
 	uint32_t lastRoomKey = 0;
@@ -8180,7 +8180,7 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 	long refreshAt = -1;
 	hotkeys_setup();
 	const int modBtn = hkMod;
-	/* SELECT or START as the hotkey: a GBA button, held back from the game
+	/* SELECT or START as the hotkey: a PS1 button, held back from the game
 	 * while it's down and handed over if it comes up with nothing pressed */
 	const bool modIsGame = modBtn == B_SELECT || modBtn == B_START;
 	bool comboUsed = false, ffModUsed = false; /* (ffModUsed: hotkey + R2 fast-forwarded) */
@@ -8188,7 +8188,7 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 	int comboPulse[2] = { 0, 0 };        /* SELECT, START handed to the game late */
 	int modPulse = 0; /* the hotkey button (SELECT or START), tapped alone: handed to the game */
 	unsigned ffPhase = 0;
-	bool noPace = getenv("GBADS_NOPACE") != NULL;
+	bool noPace = getenv("PSXDS_NOPACE") != NULL;
 	enum GameExit exitTo = GAME_QUIT_APP;
 	bool done = false;
 	bool wasMenu = false;
@@ -8342,7 +8342,7 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 						} else if (bb == BB_EXIT) {
 							if (!barExitArmed) {
 								barExitArmed = barSince;
-								ui_osd("Tap again to close GBA DS.");
+								ui_osd("Tap again to close PSX-DS.");
 							} else {
 								exitTo = GAME_QUIT_APP;
 								done = true;
@@ -8868,7 +8868,7 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 			if (HELD(B_START) && modBtn != B_START && comboHold != B_START) keys |= K_START;
 			if (HELD(B_SELECT) && modBtn != B_SELECT && comboHold != B_SELECT) keys |= K_SELECT;
 			if (snes) {
-				/* both shoulders are GBA L, panning the camera their own way */
+				/* both shoulders are PS1 L, panning the camera their own way */
 				if (HELD(B_L)) keys |= K_L | KX_PAN_L;
 				else if (HELD(B_R)) keys |= K_L | KX_PAN_R;
 			} else {
@@ -8876,7 +8876,7 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 				static bool told;
 				if (!told && ctl_four() && ctl_snes() && (HELD(B_L) || HELD(B_R))) {
 					told = true; /* (for reports: once) */
-					fprintf(stderr, "controls: SNES chosen, but the GBA layout here (game mode %02x, paused %02x)\n",
+					fprintf(stderr, "controls: SNES chosen, but the PS1 layout here (game mode %02x, paused %02x)\n",
 					        emu_read8(&emu, ctlProf->controls.snes.when[0].addr), emu_read8(&emu, ctlProf->controls.snes.when[2].addr));
 				}
 			}
@@ -9239,7 +9239,7 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 				ctlPlaying = !ctlPlaying;
 				ctlStreak = 0;
 				if (debug && ctlMode == CTL_AUTO) {
-					fprintf(stderr, "frame %llu: auto controls: %s\n", (unsigned long long) frameCount, ctlPlaying ? "four-face" : "GBA");
+					fprintf(stderr, "frame %llu: auto controls: %s\n", (unsigned long long) frameCount, ctlPlaying ? "four-face" : "PS1");
 				}
 			}
 		}
@@ -9260,17 +9260,17 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 		/* only the view the game is on needs it (all of them right after a swap,
 		 * since the menu draws the game without uploading) */
 		for (int i = 0; i < nViews; ++i) {
-			if (gameTexAll || i == screens[game_screen()].view) ui_update_texture(gameTex[i], shownFb, GBA_W * 4);
+			if (gameTexAll || i == screens[game_screen()].view) ui_update_texture(gameTex[i], shownFb, SCREEN_W * 4);
 		}
 		gameTexAll = false;
-		/* (tests, GBADS_DRAW_SHOTS_ONLY: only the frames a screenshot or a
+		/* (tests, PSXDS_DRAW_SHOTS_ONLY: only the frames a screenshot or a
 		 * touch needs are drawn) */
 		if (!ui_script_quiet()) {
 			ui_sync_view(cfg->vsync || pacedHz > 0 ? screens[game_screen()].view : -1); /* Match Display Rate; vsync: testing (docs/ANDROID.md) */
 			{
 				/* the other screen's redraw waits a frame if this one is past 70% of its time */
 				static double budget = -1;
-				if (budget < 0) budget = getenv("GBADS_DRAW_BUDGET") ? atof(getenv("GBADS_DRAW_BUDGET")) : frameSec * 1000.0 * 0.7;
+				if (budget < 0) budget = getenv("PSXDS_DRAW_BUDGET") ? atof(getenv("PSXDS_DRAW_BUDGET")) : frameSec * 1000.0 * 0.7;
 				ui_present_budget(ff ? -1 : screens[game_screen()].view, workT0, budget);
 			}
 			ui_clear();

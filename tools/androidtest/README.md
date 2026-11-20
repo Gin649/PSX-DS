@@ -1,6 +1,6 @@
 # Android code paths on the desktop
 
-`build.sh` builds `build/host/gba-ds-android`: the desktop app compiled with
+`build.sh` builds `build/host/psx-ds-android`: the desktop app compiled with
 `__ANDROID__`, with the files here standing in for `src/android.c`'s Java
 glue. It runs headless like the normal desktop build, so the Android-only
 code in the shared files can be tried and looked at before a CI APK:
@@ -13,10 +13,10 @@ Settings (Folders, Hotkeys, Updates), the second display drawn with the GPU
 Run it like the desktop app, with these on top:
 
     SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy SDL_RENDER_DRIVER=opengles2 \
-    GBADS_WINDOW=1024x768 STUB_SECOND=1280x960 GBADS_HOME=DIR SHOTDIR=DIR \
-    build/host/gba-ds-android --state-dir=DIR/st --rom-dir=ROMS --input-script=SCRIPT
+    PSXDS_WINDOW=1024x768 STUB_SECOND=1280x960 PSXDS_HOME=DIR SHOTDIR=DIR \
+    build/host/psx-ds-android --state-dir=DIR/st --rom-dir=ROMS --input-script=SCRIPT
 
-- `GBADS_WINDOW` is the activity's window (screen 1, the touch screen);
+- `PSXDS_WINDOW` is the activity's window (screen 1, the touch screen);
   `STUB_SECOND=WxH` the second display (default 1024x768).
   `STUB_SECOND=none`: one display only (a phone, a Surface Duo); with
   `STUB_HINGE=84 STUB_HINGE_LONG=2784`, a hinge of 84 pixels across the
@@ -31,7 +31,7 @@ Run it like the desktop app, with these on top:
   127.0.0.1). The "installer" copies the APK to `$STUB_INSTALLED` and
   answers after 1.5 s with `$STUB_INSTALL`: 1 asking to confirm (default),
   -2 cancelled, -3 another signing key, -4 no room, -5 an older build.
-- `GBADS_APP_FILES=DIR`: where data-folder.cfg is looked for (issue #34);
+- `PSXDS_APP_FILES=DIR`: where data-folder.cfg is looked for (issue #34);
   the move itself (android_data_setup) isn't run here.
 
 What it can't show: Java (the Presentation, the activity's life cycle,

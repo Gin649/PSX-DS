@@ -1,13 +1,13 @@
 #!/bin/bash
-# Gets both screens ready for GBA DS under sway (ROCKNIX), and puts them back
+# Gets both screens ready for PSX-DS under sway (ROCKNIX), and puts them back
 # afterwards. Run by launch.sh:
 #
-#   screens.sh on    before GBA DS starts
+#   screens.sh on    before PSX-DS starts
 #   screens.sh off   after it exits (crashed or not)
 #
 # Stock ROCKNIX leaves the second screen of a dual-screen handheld powered
 # off, with no fixed place in the layout, and its sway-touch service ties the
-# touchscreen to the first screen. GBA DS spans one window over both screens
+# touchscreen to the first screen. PSX-DS spans one window over both screens
 # (sway "fullscreen global"), so "on":
 #   - powers the second screen on (and enables it if it's disabled),
 #   - puts it to the right of the first one, as ROCKNIX's touch calibration
@@ -22,7 +22,7 @@
 #
 # Does nothing without sway, swaymsg, jq or a second screen.
 
-STATE=/tmp/gba-ds-screens.state
+STATE=/tmp/psx-ds-screens.state
 log() { echo "screens: $*"; }
 
 command -v swaymsg >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || exit 0

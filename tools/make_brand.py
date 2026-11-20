@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Renders the GBA DS branding images and embeds them in src/brand_data.c.
+"""Renders the PSX-DS branding images and embeds them in src/brand_data.c.
 
-    tools/make_brand.py FUTURA_BOLD_ITALIC.otf GAMECUBEN.ttf
+    tools/make_brand.py [FONT.ttf]
 
-The font files are not part of the repository (Futura is a commercial font);
-only the rendered images are. Outputs:
+The logo and button prompts are set in Jost Bold Italic (assets/fonts, OFL)
+unless another font is given. Outputs:
 
-    assets/brand/gba-ds-logo.png        full-size logo (transparent)
-    assets/brand/gba-ds-logo-1024.png   1024 px wide
+    assets/brand/psx-ds-logo.png        full-size logo (transparent)
+    assets/brand/psx-ds-logo-1024.png   1024 px wide
     src/brand_data.c                    PNGs used by the app, as byte arrays
 
 Menu and other UI text isn't here: the app draws it in Jost (assets/fonts,
@@ -33,19 +33,16 @@ def sized(path, cap):
     return ImageFont.truetype(path, round(1000 * cap / (b[3] - b[1])))
 
 
-def logo(futura, gamecuben):
-    """GBA (Futura Bold Italic) + DS (Gamecuben, 75% height), white with a thick navy outline."""
+def logo(font_path, gamecuben=None):
+    """PSX-DS in one bold italic font, white with a thick navy outline."""
     cap = 400
-    fut, gc = sized(futura, cap), sized(gamecuben, cap * 0.75)
+    fut = sized(font_path, cap)
     sw = 88                      # outline thickness
-    track, wgap = 0.012, 0.13    # letter spacing removed / gap between words, x cap height
+    track = 0.012                # letter spacing removed, x cap height
     glyphs, x = [], 0.0
-    for word, font in (("GBA", fut), ("DS", gc)):
-        if glyphs:
-            x += wgap * cap
-        for c in word:
-            glyphs.append((font, c, x))
-            x += font.getlength(c) - track * cap
+    for c in "PSX-DS":
+        glyphs.append((fut, c, x))
+        x += fut.getlength(c) - track * cap
     pad = sw + 200
     img = Image.new("RGBA", (int(x + 2 * pad + cap), int(cap * 2 + 2 * pad)), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -158,15 +155,15 @@ def png_bytes(img):
 
 
 def main():
-    if len(sys.argv) != 3:
+    if len(sys.argv) > 2:
         sys.exit(__doc__)
-    futura, gamecuben = sys.argv[1], sys.argv[2]
-    full = logo(futura, gamecuben)
+    futura = sys.argv[1] if len(sys.argv) == 2 else os.path.join(ROOT, "assets", "fonts", "Jost-700-BoldItalic.ttf")
+    full = logo(futura)
     out = os.path.join(ROOT, "assets", "brand")
     os.makedirs(out, exist_ok=True)
-    full.save(os.path.join(out, "gba-ds-logo.png"))
+    full.save(os.path.join(out, "psx-ds-logo.png"))
     full.resize((1024, round(full.height * 1024 / full.width)), Image.LANCZOS).save(
-        os.path.join(out, "gba-ds-logo-1024.png"))
+        os.path.join(out, "psx-ds-logo-1024.png"))
 
     # in-app images, sized for ~2x their on-screen size on a 1024x768 screen
     images = {

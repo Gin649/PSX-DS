@@ -1,17 +1,17 @@
-/* Thin wrapper around a libmgba core. */
-#ifndef GBADS_EMU_H
-#define GBADS_EMU_H
+/* Thin wrapper around a SwanStation core. */
+#ifndef PSXDS_EMU_H
+#define PSXDS_EMU_H
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 /* The picture the rest of the app works with: every PS1 frame is scaled into
- * it (emu.c). The names are the GBA build's; they go in a later clean-up. */
-#define GBA_W 640
-#define GBA_H 480
+ * it (emu.c). The names are the PS1 build's; they go in a later clean-up. */
+#define SCREEN_W 640
+#define SCREEN_H 480
 
-/* GBA key bits as used by mCore::setKeys */
+/* PS1 key bits as used by mCore::setKeys */
 enum {
 	K_A = 1 << 0,
 	K_B = 1 << 1,
@@ -65,7 +65,7 @@ typedef struct SpriteRule {
 
 typedef struct Emu {
 	struct mCore* core;
-	uint32_t* fb; /* GBA_W * GBA_H, mGBA native 32-bit color (XBGR8888, i.e. bytes R,G,B,X) */
+	uint32_t* fb; /* SCREEN_W * SCREEN_H, SwanStation native 32-bit color (XBGR8888, i.e. bytes R,G,B,X) */
 	char gameCode[5];
 	uint32_t romCrc; /* the ROM's CRC32, as loaded, patched if it was (profile_dump) */
 	int patch; /* PatchResult (patch.h): a patch file beside the ROM, and whether it was applied (GEN-9) */
@@ -82,7 +82,7 @@ typedef struct Emu {
 
 /* savePath may be NULL (no battery save attached). */
 bool emu_open(Emu* e, const char* romPath, const char* savePath, bool audio);
-/* ROMs may also be in a .zip or .7z (the first GBA ROM inside is used). */
+/* ROMs may also be in a .zip or .7z (the first PS1 ROM inside is used). */
 bool emu_is_rom_name(const char* name);   /* .gba, .zip, .7z */
 bool emu_is_archive_name(const char* name); /* .zip, .7z */
 /* Reads the first n bytes of the ROM header (n <= 0xC0), from inside an
@@ -100,7 +100,7 @@ void emu_reset(Emu* e);
 size_t emu_state_size(Emu* e);
 bool emu_state_save(Emu* e, void* buf);
 bool emu_state_load(Emu* e, const void* buf);
-/* Rewind (mGBA's, one buffer of `entries` states for one core): append a
+/* Rewind (SwanStation's, one buffer of `entries` states for one core): append a
  * state now and then while playing; each step goes back one of them
  * (false when there are none left). */
 void emu_rewind_init(Emu* e, size_t entries);
@@ -110,31 +110,31 @@ bool emu_rewind_step(Emu* e);
 size_t emu_rewind_count(void);
 
 /* Full savestates (including battery data) on disk. Loading (and the
- * functions below) take GBA DS's / mGBA's own files and RetroArch's (and
- * BananaFront's: RASTATE, compressed or not) with its mGBA core's state. */
+ * functions below) take PSX-DS's / SwanStation's own files and RetroArch's (and
+ * BananaFront's: RASTATE, compressed or not) with its SwanStation core's state. */
 typedef enum {
-	STATE_FORMAT_MGBA,           /* mGBA's own (GBA DS's states) */
+	STATE_FORMAT_MGBA,           /* SwanStation's own (PSX-DS's states) */
 	STATE_FORMAT_RETROARCH,      /* RetroArch's, uncompressed */
 	STATE_FORMAT_RETROARCH_RZIP, /* RetroArch's, compressed (its savestate_file_compression) */
 } StateFormat;
 typedef enum {
 	STATE_FILE_NONE,       /* no such file */
-	STATE_FILE_MGBA,       /* mGBA's own */
-	STATE_FILE_RETROARCH,  /* RetroArch's, with its mGBA core's state */
+	STATE_FILE_MGBA,       /* SwanStation's own */
+	STATE_FILE_RETROARCH,  /* RetroArch's, with its SwanStation core's state */
 	STATE_FILE_OTHER_CORE, /* another emulator's (RetroArch's gpSP, VBA-M...): not loadable */
-	STATE_FILE_UNREADABLE, /* compressed in a way GBA DS can't read, or damaged */
+	STATE_FILE_UNREADABLE, /* compressed in a way PSX-DS can't read, or damaged */
 } StateFileKind;
-bool emu_state_save_file(Emu* e, const char* path); /* (mGBA's format, nothing of GBA DS's own) */
-/* extra: GBA DS's own data kept inside it (mGBA's extra data, a tag of
+bool emu_state_save_file(Emu* e, const char* path); /* (SwanStation's format, nothing of PSX-DS's own) */
+/* extra: PSX-DS's own data kept inside it (SwanStation's extra data, a tag of
  * its own: other emulators skip it), or NULL */
 bool emu_state_save_file_as(Emu* e, const char* path, const void* extra, size_t extraN, StateFormat fmt);
 bool emu_state_load_file(Emu* e, const char* path);
-/* what's in a state file; *fromGbads (may be NULL): it has GBA DS's own data (saved by GBA DS) */
-StateFileKind emu_state_file_kind(Emu* e, const char* path, bool* fromGbads);
-/* The CRC32 of the ROM a state file was saved with (mGBA keeps it in the
- * state's header); false if it isn't a GBA state */
+/* what's in a state file; *fromPsxds (may be NULL): it has PSX-DS's own data (saved by PSX-DS) */
+StateFileKind emu_state_file_kind(Emu* e, const char* path, bool* fromPsxds);
+/* The CRC32 of the ROM a state file was saved with (SwanStation keeps it in the
+ * state's header); false if it isn't a PS1 state */
 bool emu_state_file_rom_crc(const char* path, uint32_t* crc);
-/* GBA DS's own data kept inside a state file, as a malloc'd copy (NULL: none) */
+/* PSX-DS's own data kept inside a state file, as a malloc'd copy (NULL: none) */
 void* emu_state_file_get_extra(Emu* e, const char* path, size_t* n);
 
 /* The whole ROM file (inside a .zip / .7z too), malloc'd; NULL on failure. */
@@ -151,7 +151,7 @@ void emu_patch_plan(const char* rom, char files[][1024], int n);
 /* The ROM with the patches given applied, in order (the game list's
  * checksum of each game as it would be played) */
 uint8_t* emu_rom_read_patched(const char* path, char files[][1024], int n, size_t* size, int* patch, char* patchName);
-/* A memory region of the running game (GBA address >> 24: 2 EWRAM, 3 IWRAM,
+/* A memory region of the running game (PS1 address >> 24: 2 EWRAM, 3 IWRAM,
  * 0xE save RAM), or NULL. */
 uint8_t* emu_memory(Emu* e, int region, size_t* size);
 uint8_t emu_read8(Emu* e, uint32_t addr);
@@ -181,7 +181,7 @@ void emu_hide_exact(Emu* e, const uint16_t (*attrs)[3], int n);
 void emu_layers(Emu* e, unsigned mask);
 /* HUD split (Mario Kart): while on, the BG layers in bgMask (bit 0 = BG0)
  * and the sprites matching any of objs are left out of the game picture and
- * drawn alone into hud (GBA_W x GBA_H, kept by the caller while the core is
+ * drawn alone into hud (SCREEN_W x SCREEN_H, kept by the caller while the core is
  * open; emu_hud_clear where there's nothing). Can be called again while on
  * to change what moves. Renders nothing extra while off. */
 bool emu_hud_split(Emu* e, bool on, unsigned bgMask, const SpriteRule* objs, int nObjs, uint32_t* hud);
@@ -252,7 +252,7 @@ bool emu_hud_grabbed(void);
  * (applied every frame) from codes in RetroArch's .cht form: hex words
  * joined with '+', paired up into "XXXXXXXX YYYY" (Code Breaker) or
  * "XXXXXXXX YYYYYYYY" (GameShark / Action Replay) lines. type: 0 = detect,
- * else EMU_CHEAT_*. Returns the number of lines mGBA accepted. */
+ * else EMU_CHEAT_*. Returns the number of lines SwanStation accepted. */
 enum { EMU_CHEAT_DETECT = 0, EMU_CHEAT_CODEBREAKER, EMU_CHEAT_GAMESHARK, EMU_CHEAT_ACTION_REPLAY };
 void emu_cheats_clear(Emu* e);
 int emu_cheats_add(Emu* e, const char* name, const char* const* codes, int n, int type);

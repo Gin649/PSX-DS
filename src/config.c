@@ -17,7 +17,7 @@ void config_defaults(Config* c) {
 	memset(c, 0, sizeof(*c));
 	strcpy(c->layout, "auto");
 	strcpy(c->saveExt, "sav");
-	strcpy(c->stateFolder, "gbads");
+	strcpy(c->stateFolder, "psxds");
 	strcpy(c->scale, "integer");
 	strcpy(c->mapScale, "integer");
 	strcpy(c->accent, "purple");
@@ -25,7 +25,7 @@ void config_defaults(Config* c) {
 	for (int i = 0; i < HK_COUNT; ++i) strcpy(c->hotkeyBtn[i], hotkeyDefaults[i]);
 	c->shaderLast = SH_GRID;
 	strcpy(c->menuCombo, "none");
-	strcpy(c->romDir, "/storage/roms/gba");
+	strcpy(c->romDir, "/storage/roms/psx");
 	strcpy(c->screenshotDir, "/storage/roms/screenshots");
 	strcpy(c->cheatDir, "/config/retroarch/cheats:/storage/.config/retroarch/cheats");
 	strcpy(c->esConfigDir, "/storage/.config/emulationstation");
@@ -376,13 +376,13 @@ bool config_parse_args(Config* c, int argc, char** argv) {
 
 void config_usage(const char* argv0) {
 	fprintf(stderr,
-	        "GBA DS " GBADS_VERSION "\n"
+	        "PSX-DS " PSXDS_VERSION "\n"
 	        "usage: %s [options] [game.gba]\n"
 	        "\n"
 	        "Without a game, opens the game library (games found in --rom-dir).\n"
 	        "\n"
-	        "Options (also accepted as key=value lines in gba-ds.cfg):\n"
-	        "  --rom-dir=DIR[:DIR]    library folders (/storage/roms/gba)\n"
+	        "Options (also accepted as key=value lines in psx-ds.cfg):\n"
+	        "  --rom-dir=DIR[:DIR]    library folders (/storage/roms/psx)\n"
 	        "  --cheat-dir=DIR[:DIR]  RetroArch .cht folders (/config/retroarch/cheats:...)\n"
 	        "  --patch-dir=DIR        patches, a folder per game (default: patches beside the app)\n"
 	        "  --screenshot-dir=DIR   where Take Screenshot saves (/storage/roms/screenshots)\n"
@@ -396,18 +396,18 @@ void config_usage(const char* argv0) {
 	        "  --shader=NAME          a pattern over every pixel: off, grid, scanlines, soft,\n"
 	        "                         subpixels-light, subpixels, subpixels-strong\n"
 	        "                         (--lcd-strength=0..100 for the first three)\n"
-	        "  --lcd-ghosting         each frame blended with the one before, as on a GBA's LCD\n"
+	        "  --lcd-ghosting         each frame blended with the one before, as on a PS1's LCD\n"
 	        "  --smooth               plain linear filtering\n"
 	        "  --vsync                sync presentation to the display\n"
 	        "  --no-map               disable the map screen\n"
 	        "  --map-interval=N       frames between map refreshes (90)\n"
-	        "  --ab-swap              GBA A on the bottom face button\n"
+	        "  --ab-swap              PS1 A on the bottom face button\n"
 	        "  --hotkey=home|select|start|l3   the hotkey button, held with another for a shortcut\n"
 	        "  --hotkey-quit=BUTTON (and -save-state, -load-state, -quick-menu, -swap-screens, -shader)\n"
 	        "                         each shortcut's button (a, b, x, y, l, r, l2, r2, select,\n"
 	        "                         start, l3, up, down, left, right) or none\n"
 	        "  --menu-combo=select+start|none   buttons that open the menu together (none)\n"
-	        "  --home-button=N        raw joystick button that acts as HOME (see GBADS_DEBUG=1 log)\n"
+	        "  --home-button=N        raw joystick button that acts as HOME (see PSXDS_DEBUG=1 log)\n"
 	        "  --no-auto-resume       don't save on exit / resume on launch\n"
 	        "  --no-save-on-quit      don't save a resume point on quitting (--no-auto-load: don't load it)\n"
 	        "  --show-fps\n"
@@ -417,7 +417,7 @@ void config_usage(const char* argv0) {
 	        "  --ff-speed=N|max       fast-forward multiplier (3)\n"
 	        "  --save-dir=DIR         battery saves (next to the ROM)\n"
 	        "  --state-dir=DIR        save states and thumbnails (<data folder>/states)\n"
-	        "  --data-dir=DIR         GBA DS's data folder: states, cheats, overlays, logos...\n"
+	        "  --data-dir=DIR         PSX-DS's data folder: states, cheats, overlays, logos...\n"
 	        "                         (the app's folder; best set in data-folder.cfg there)\n"
 	        "\n"
 	        "Testing: --load-state=FILE --quit-after=TICKS --input-script=FILE\n"
@@ -448,10 +448,10 @@ static const SettingChoice chMatch[] = { { "keep", "Keep device shapes", 0 }, { 
 static const SettingChoice chPlace[] = { { "center", "Centered", 0 }, { "no_gap", "Closest to gap", 0 } };
 static const SettingChoice chOverlays[] = { { N_("off"), "Off", OVM_OFF }, { "generated", "Generated", OVM_GENERATED }, { "custom", "Custom", OVM_CUSTOM } };
 static const SettingChoice chOvlScreens[] = { { "both", "Both screens", OVL_BOTH }, { "top", "Top screen", OVL_TOP }, { "bottom", "Bottom screen", OVL_BOTTOM } };
-static const SettingChoice chAB[] = { { "0", "Like a GBA", 0 }, { "1", "Swapped", 1 } };
+static const SettingChoice chAB[] = { { "0", "Like an LCD", 0 }, { "1", "Swapped", 1 } };
 static const SettingChoice chFace[] = {
-	{ "a", "GBA A", 0 }, { "b", "GBA B", 0 }, { "l", "GBA L", 0 }, { "r", "GBA R", 0 },
-	{ "up", "GBA Up", 0 }, { "down", "GBA Down", 0 }, { "left", "GBA Left", 0 }, { "right", "GBA Right", 0 }, { "start", "Start", 0 },
+	{ "a", "PS1 Circle", 0 }, { "b", "PS1 Cross", 0 }, { "l", "PS1 L1", 0 }, { "r", "PS1 R1", 0 },
+	{ "up", "PS1 Up", 0 }, { "down", "PS1 Down", 0 }, { "left", "PS1 Left", 0 }, { "right", "PS1 Right", 0 }, { "start", "Start", 0 },
 	{ "select", "Select", 0 }, { "turbo_a", "Turbo A", 0 }, { "turbo_b", "Turbo B", 0 }, { "none", "Nothing", 0 },
 };
 static const SettingChoice chTurbo[] = { { "10", "Slow (10 a second)", 10 }, { "15", "Medium (15 a second)", 15 }, { "20", "Fast (20 a second)", 20 } };
@@ -476,16 +476,16 @@ static const Setting settingsTable[] = {
 	{ "map_scale", "Second screen scale", SF_STR, OFFB(mapScale), ARR(chScale), 0, 0, 0, NULL, "How the map or logo fills its screen." },
 	{ "shader", "Shader", SF_INT, OFFB(shader), ARR(chShader), 0, 0, 0, NULL, "A pattern over every pixel, on both screens." },
 	{ "lcd_strength", "Pattern strength", SF_INT, OFFB(lcdStrength), NULL, 0, 0, 100, 5, "%", "How dark the grid, scanlines and soft cells are." },
-	{ "color_correction", "Color correction", SF_BOOL, OFFB(colorCorrection), ARR(chOnOff), 0, 0, 0, NULL, "Colors as a Game Boy Advance's screen showed them." },
-	{ "lcd_ghosting", "LCD ghosting", SF_BOOL, OFFB(ghosting), ARR(chOnOff), 0, 0, 0, NULL, "Moving things leave a short trail, as on a GBA." },
+	{ "color_correction", "Color correction", SF_BOOL, OFFB(colorCorrection), ARR(chOnOff), 0, 0, 0, NULL, "Colors as a handheld's LCD screen would show them." },
+	{ "lcd_ghosting", "LCD ghosting", SF_BOOL, OFFB(ghosting), ARR(chOnOff), 0, 0, 0, NULL, "Moving things leave a short trail, as on an LCD." },
 	{ "smooth", "Smooth scaling", SF_BOOL, OFFB(smooth), ARR(chOnOff), 0, 0, 0, NULL, "Blurry instead of sharp: usually leave off." },
 
 	{ "swap", "Screens", SF_BOOL, OFFB(swap), ARR(chSwap), 0, 0, 0, NULL, "Which screen the game is on." },
 	{ "screen_match", "Screen shapes", SF_STR, OFFB(screenMatch), ARR(chMatch), 0, 0, 0, NULL, "Only when your two screens differ in shape. Experimental." },
 	{ "screen_placement", "Screen placement", SF_STR, OFFB(screenPlace), ARR(chPlace), 0, 0, 0, NULL, "Pictures in the middle of their screens, or close together." },
-	{ "overlays", "Overlays", SF_INT, OFFB(overlayMode), ARR(chOverlays), 0, 0, 0, NULL, "GBA DS's bezel, or your own PNGs, round the picture." },
+	{ "overlays", "Overlays", SF_INT, OFFB(overlayMode), ARR(chOverlays), 0, 0, 0, NULL, "PSX-DS's bezel, or your own PNGs, round the picture." },
 	{ "overlay_screens", "Overlays on", SF_INT, OFFB(overlays), ARR(chOvlScreens), 0, 0, 0, NULL, "Which screens have them." },
-	{ "bezel_logo", "Bezel logo", SF_BOOL, OFFB(bezelLogo), ARR(chOnOff), 0, 0, 0, NULL, "The GBA DS logo in the generated bezel." },
+	{ "bezel_logo", "Bezel logo", SF_BOOL, OFFB(bezelLogo), ARR(chOnOff), 0, 0, 0, NULL, "The PSX-DS logo in the generated bezel." },
 	{ "show_fps", "Show FPS", SF_BOOL, OFFB(showFps), ARR(chOnOff), 0, 0, 0, NULL, "Frames a second above the game, all the time." },
 
 	{ "theme", "Light/dark mode", SF_BOOL, OFFB(lightTheme), ARR(chTheme), 0, 0, 0, NULL, "The menus' buttons: dark grey, or light grey like the web player's." },
@@ -493,7 +493,7 @@ static const Setting settingsTable[] = {
 	{ "brightness_top", "Top screen brightness", SF_INT, OFFB(brightTop), NULL, 0, 20, 100, 10, "%", "Darkens the top screen, in this app only: the device's own brightness is left alone (and this can't go above it)." },
 	{ "brightness_bottom", "Bottom screen brightness", SF_INT, OFFB(brightBottom), NULL, 0, 20, 100, 10, "%", "Darkens the bottom screen, in this app only: the device's own brightness is left alone (and this can't go above it)." },
 	{ "left_stick_dpad", "Left stick as D-pad", SF_BOOL, OFFB(leftStickDpad), ARR(chOnOff), 0, 0, 0, NULL, "Off: the left stick does nothing in games." },
-	{ "ab_swap", "A and B buttons", SF_BOOL, OFFB(abSwap), ARR(chAB), 0, 0, 0, NULL, "GBA A on the right button, or on the bottom one." },
+	{ "ab_swap", "A and B buttons", SF_BOOL, OFFB(abSwap), ARR(chAB), 0, 0, 0, NULL, "PS1 Circle on the right button, or on the bottom one." },
 	{ "button_right", "A (right) button", SF_STR, OFFB(faceBtn[0]), ARR(chFace), 0, 0, 0, NULL, "What the right face button gives the game." },
 	{ "button_bottom", "B (bottom) button", SF_STR, OFFB(faceBtn[1]), ARR(chFace), 0, 0, 0, NULL, "What the bottom face button gives the game." },
 	{ "button_top", "X (top) button", SF_STR, OFFB(faceBtn[2]), ARR(chFace), 0, 0, 0, NULL, "What the top face button gives the game." },
@@ -514,9 +514,9 @@ static const Setting settingsTable[] = {
 	{ "audio_latency", "Sound delay", SF_INT, OFFB(audioLatency), ARR(chLatency), 0, 0, 0, N_(" ms"), "Raise it if the sound crackles." },
 	{ "performance", "Performance", SF_BOOL, OFFB(perfMax), ARR(chPerf), 0, 0, 0, NULL, "Max: full speed, a warmer device and a shorter battery." },
 
-	{ "map", "Second screen", SF_BOOL, OFFB(map), ARR(chOnOff), 0, 0, 0, NULL, "Off: every game plays like an ordinary GBA game." },
+	{ "map", "Second screen", SF_BOOL, OFFB(map), ARR(chOnOff), 0, 0, 0, NULL, "Off: every game plays like an ordinary PS1 game." },
 	{ "map_interval", "Map refresh", SF_INT, OFFB(mapInterval), ARR(chInterval), 0, 0, 0, NULL, "Shorter can make the sound crackle on a slow device." },
-	{ "pinball_live", "Pinball two-screen view", SF_BOOL, OFFB(tallLive), ARR(chOnOff), 0, 0, 0, NULL, "Off for slower devices: the table on one screen. Close and restart GBA DS to apply." },
+	{ "pinball_live", "Pinball two-screen view", SF_BOOL, OFFB(tallLive), ARR(chOnOff), 0, 0, 0, NULL, "Off for slower devices: the table on one screen. Close and restart PSX-DS to apply." },
 };
 
 const Setting* config_setting(const char* key) {
@@ -595,7 +595,7 @@ bool config_setting_step(Config* c, const Setting* s, int dir) {
 	}
 	int i = config_setting_index(c, s), to;
 	if (i < 0 && s->field == SF_INT) {
-		/* a number gba-ds.cfg gave that isn't on the list: the next one up or down */
+		/* a number psx-ds.cfg gave that isn't on the list: the next one up or down */
 		int v = *(const int*) ((const char*) c + s->off);
 		to = dir > 0 ? 0 : s->nChoices - 1;
 		for (int k = 0; k < s->nChoices; ++k) {

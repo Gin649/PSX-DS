@@ -1,6 +1,6 @@
 #include "update.h"
 
-#ifdef GBADS_UPDATES
+#ifdef PSXDS_UPDATES
 
 #include "http.h"
 #include "paths.h"
@@ -23,10 +23,10 @@
 #include <time.h>
 #include <unistd.h>
 
-#define DEFAULT_URL "https://api.github.com/repos/kyannon/gba-ds/releases/latest"
+#define DEFAULT_URL "https://api.github.com/repos/Gin649/PSX-DS/releases/latest"
 #define CHECK_EVERY (24 * 60 * 60)
 #ifdef __ANDROID__
-#define ASSET_END "-android.apk" /* gba-ds-vX.Y.Z-android.apk */
+#define ASSET_END "-android.apk" /* psx-ds-vX.Y.Z-android.apk */
 #else
 #define ASSET_END "-linux-aarch64.zip"
 #endif
@@ -38,7 +38,7 @@ static struct {
 	char stateFile[1100], workDir[1100];
 	char installDir[1024], exePath[1024];
 	char skip[32];
-	int autoCfg; /* update.cfg's auto (-1: not set; gba-ds.cfg's update_check decides) */
+	int autoCfg; /* update.cfg's auto (-1: not set; psx-ds.cfg's update_check decides) */
 	bool autoDefault;
 	bool checkedThisRun, notice, noticeSeen, busy;
 	/* the release found */
@@ -53,7 +53,7 @@ static struct {
 static void save_state_file(void) {
 	FILE* f = fopen(U.stateFile, "w");
 	if (!f) return;
-	fprintf(f, "# GBA DS updates (the game list's Settings > Updates)\n");
+	fprintf(f, "# PSX-DS updates (the game list's Settings > Updates)\n");
 	fprintf(f, "last_check = %ld\n", U.info.lastCheck);
 	if (U.skip[0]) fprintf(f, "skip = %s\n", U.skip);
 	if (U.autoCfg >= 0) fprintf(f, "auto = %d\n", U.autoCfg);
@@ -236,7 +236,7 @@ static void set_error(const char* fmt, const char* detail) {
 static int check_thread(void* ud) {
 	bool automatic = ud != NULL;
 	char ua[64], err[200];
-	snprintf(ua, sizeof(ua), "GBA-DS/%s", GBADS_VERSION);
+	snprintf(ua, sizeof(ua), "PSX-DS/%s", PSXDS_VERSION);
 	char* body = NULL;
 	size_t len = 0;
 	int code = http_get(U.url, ua, 20, NULL, &body, &len, err, sizeof(err), NULL);
@@ -261,7 +261,7 @@ static int check_thread(void* ud) {
 	if (assets && *assets == '[') {
 		const char* p = skip_ws(assets + 1);
 		while (*p == '{') {
-			if (json_string(json_find(p, "name"), name, sizeof(name)) && !strncmp(name, "gba-ds-v", 8) &&
+			if (json_string(json_find(p, "name"), name, sizeof(name)) && !strncmp(name, "psx-ds-v", 8) &&
 			    strstr(name, ASSET_END)) {
 				snprintf(assetName, sizeof(assetName), "%s", name);
 				json_string(json_find(p, "browser_download_url"), asset, sizeof(asset));
@@ -287,7 +287,7 @@ static int check_thread(void* ud) {
 	U.info.lastCheck = (long) time(NULL);
 	U.checkedThisRun = true;
 	const char* ver = tag[0] == 'v' ? tag + 1 : tag;
-	bool newer = compare_versions(ver, GBADS_VERSION) > 0 && asset[0] && !(draft && *draft == 't') && !(pre && *pre == 't');
+	bool newer = compare_versions(ver, PSXDS_VERSION) > 0 && asset[0] && !(draft && *draft == 't') && !(pre && *pre == 't');
 	if (newer) {
 		U.info.state = UPD_AVAILABLE;
 		snprintf(U.info.version, sizeof(U.info.version), "%s", ver);
@@ -305,7 +305,7 @@ static int check_thread(void* ud) {
 	U.busy = false;
 	save_state_file();
 	SDL_UnlockMutex(U.lock);
-	fprintf(stderr, "update: latest release %s (this is %s)%s\n", tag, GBADS_VERSION, newer ? ": newer" : "");
+	fprintf(stderr, "update: latest release %s (this is %s)%s\n", tag, PSXDS_VERSION, newer ? ": newer" : "");
 	free(notes);
 	return 0;
 }
@@ -369,11 +369,11 @@ static bool write_file(Zip* z, int i, const char* dest, bool exec) {
 
 typedef struct { char from[1100], to[1100]; } Move;
 
-/* Unpack the release zip: gba-ds/... into the app's folder, the other
- * top-level files (GBA DS.sh, images/) beside it if they're there already.
+/* Unpack the release zip: psx-ds/... into the app's folder, the other
+ * top-level files (PSX-DS.sh, images/) beside it if they're there already.
  * Everything is written as name.new first, then renamed over the old files
  * (a running program or script keeps its old copy). The player's
- * gba-ds.cfg is kept. */
+ * psx-ds.cfg is kept. */
 static bool install_zip(const char* zip, char* err, size_t errSize) {
 	Zip* d = zip_open(zip);
 	if (!d) {
@@ -392,12 +392,12 @@ static bool install_zip(const char* zip, char* err, size_t errSize) {
 		if (!name || !name[0] || ends_with(name, "/")) continue;
 		if (strstr(name, "..") || name[0] == '/') continue;
 		char dest[1100];
-		bool app = !strncmp(name, "gba-ds/", 7);
+		bool app = !strncmp(name, "psx-ds/", 7);
 		if (app) {
 			const char* rel = name + 7;
-			if (!strcmp(rel, "gba-ds.cfg") && path_exists(U.installDir)) {
+			if (!strcmp(rel, "psx-ds.cfg") && path_exists(U.installDir)) {
 				char p[1100];
-				snprintf(p, sizeof(p), "%s/gba-ds.cfg", U.installDir);
+				snprintf(p, sizeof(p), "%s/psx-ds.cfg", U.installDir);
 				if (path_exists(p)) continue; /* the player's settings */
 			}
 			snprintf(dest, sizeof(dest), "%s/%s", U.installDir, rel);
@@ -411,8 +411,8 @@ static bool install_zip(const char* zip, char* err, size_t errSize) {
 			if (!path_exists(p)) continue; /* not part of this install */
 			snprintf(dest, sizeof(dest), "%s/%s", parent, name);
 		}
-		bool exec = !strcmp(name, "gba-ds/gba-ds") || ends_with(name, ".sh");
-		if (!strcmp(name, "gba-ds/gba-ds")) sawBinary = true;
+		bool exec = !strcmp(name, "psx-ds/psx-ds") || ends_with(name, ".sh");
+		if (!strcmp(name, "psx-ds/psx-ds")) sawBinary = true;
 		if (nMoves == cap) {
 			cap = cap ? cap * 2 : 64;
 			moves = realloc(moves, sizeof(Move) * (size_t) cap);
@@ -426,14 +426,14 @@ static bool install_zip(const char* zip, char* err, size_t errSize) {
 		}
 		/* a copy run from elsewhere (launch.sh's, when the card won't run
 		 * programs): the new program goes there too */
-		if (ok && !strcmp(name, "gba-ds/gba-ds") && U.exePath[0] && strncmp(U.exePath, U.installDir, strlen(U.installDir)) != 0) {
+		if (ok && !strcmp(name, "psx-ds/psx-ds") && U.exePath[0] && strncmp(U.exePath, U.installDir, strlen(U.installDir)) != 0) {
 			snprintf(newBinary, sizeof(newBinary), "%.1090s.new", U.exePath);
 			if (!write_file(d, zi, newBinary, true)) newBinary[0] = 0;
 		}
 	}
 	zip_close(d);
 	if (ok && !sawBinary) {
-		snprintf(err, errSize, "the download has no gba-ds program in it");
+		snprintf(err, errSize, "the download has no psx-ds program in it");
 		ok = false;
 	}
 	for (int i = 0; i < nMoves; ++i) {
@@ -458,7 +458,7 @@ static bool install_zip(const char* zip, char* err, size_t errSize) {
 static int install_thread(void* ud) {
 	(void) ud;
 	char zip[1200], err[200] = "", ua[64];
-	snprintf(ua, sizeof(ua), "GBA-DS/%s", GBADS_VERSION);
+	snprintf(ua, sizeof(ua), "PSX-DS/%s", PSXDS_VERSION);
 	mkdirs(U.workDir);
 	snprintf(zip, sizeof(zip), "%s/%s", U.workDir, U.assetName);
 	int code = http_get(U.assetUrl, ua, 600, zip, NULL, NULL, err, sizeof(err), &U.cancel);
@@ -537,14 +537,14 @@ static void android_poll(void) {
 	U.info.state = UPD_ERROR;
 	if (st == -3) {
 		snprintf(U.info.error, sizeof(U.info.error),
-		         "Android won't install v%s over this copy of GBA DS: it was signed with another key (a test build?). "
-		         "Uninstall GBA DS, then install the new version from github.com/kyannon/gba-ds/releases. Your files in "
-		         "the GBA DS folder are kept.", U.info.version);
+		         "Android won't install v%s over this copy of PSX-DS: it was signed with another key (a test build?). "
+		         "Uninstall PSX-DS, then install the new version from github.com/Gin649/PSX-DS/releases. Your files in "
+		         "the PSX-DS folder are kept.", U.info.version);
 	} else if (st == -5) {
 		snprintf(U.info.error, sizeof(U.info.error),
-		         "Android won't install v%s over this copy of GBA DS: this copy is a test build made after it, and "
-		         "Android doesn't go back to an earlier build. Keep this one, or uninstall GBA DS and install v%s from "
-		         "github.com/kyannon/gba-ds/releases (your files in the GBA DS folder are kept).", U.info.version,
+		         "Android won't install v%s over this copy of PSX-DS: this copy is a test build made after it, and "
+		         "Android doesn't go back to an earlier build. Keep this one, or uninstall PSX-DS and install v%s from "
+		         "github.com/Gin649/PSX-DS/releases (your files in the PSX-DS folder are kept).", U.info.version,
 		         U.info.version);
 	} else if (st == -4) {
 		snprintf(U.info.error, sizeof(U.info.error), "There isn't enough storage free to install the update.");
@@ -686,7 +686,7 @@ int update_restart_if_installed(void) {
 	 * first run, not the next start (issue #50: v1.5.3's clock and log
 	 * changes were in launch.sh, and a player updating in the app kept
 	 * playing under v1.5.2's) */
-	const char* rs = getenv("GBADS_RELAUNCH_STATUS");
+	const char* rs = getenv("PSXDS_RELAUNCH_STATUS");
 	int status = rs ? atoi(rs) : 0;
 	if (status > 0 && status < 256) {
 		fprintf(stderr, "update: back to launch.sh to start the new version (exit %d)\n", status);

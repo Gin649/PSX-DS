@@ -154,7 +154,7 @@ void ui_load_script(const char* path) {
 	script_virtual_pad();
 }
 
-/* GBADS_DRAW_SHOTS_ONLY (tools/regress.py): nothing needs drawing this
+/* PSXDS_DRAW_SHOTS_ONLY (tools/regress.py): nothing needs drawing this
  * frame, as an input script runs with no screenshot due and no touch,
  * swipe, load or joystick line within 30 ticks (the quick bar's layout and
  * hit areas are worked out as it's drawn). The game, map and HUD
@@ -164,7 +164,7 @@ bool ui_scripted(void) { return scriptLen > 0; }
 
 bool ui_script_quiet(void) {
 	static int on = -1;
-	if (on < 0) on = getenv("GBADS_DRAW_SHOTS_ONLY") != NULL;
+	if (on < 0) on = getenv("PSXDS_DRAW_SHOTS_ONLY") != NULL;
 	if (!on || !scriptLen || pendingShot[0] || swipeStep >= 0 || scriptTapUp >= 0) return false;
 	for (int i = 0; i < scriptLen; ++i) {
 		if (!script[i].action[0] || !strncmp(script[i].action, "SHOT:", 5) || !strcmp(script[i].action, "QUIT")) continue;
@@ -195,7 +195,7 @@ static void push_finger(Uint32 type, float x, float y) {
 }
 
 #ifdef __wasi__
-/* State Saver's GBA DS tab: a touch on the page (x, y fractions of the window) */
+/* State Saver's PSX-DS tab: a touch on the page (x, y fractions of the window) */
 __attribute__((export_name("web_touch"))) void web_touch(int type, float x, float y) {
 	push_finger(type == 1 ? SDL_FINGERDOWN : type == 2 ? SDL_FINGERUP : SDL_FINGERMOTION, x, y);
 }
@@ -243,7 +243,7 @@ static void run_script(void) {
 static bool create_view(View* v, int display, const char* title, bool fullscreen, int ww, int wh) {
 	Uint32 flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
 	if (fullscreen) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
-	if (getenv("GBADS_WINDOW")) sscanf(getenv("GBADS_WINDOW"), "%dx%d", &ww, &wh);
+	if (getenv("PSXDS_WINDOW")) sscanf(getenv("PSXDS_WINDOW"), "%dx%d", &ww, &wh);
 	v->win = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED_DISPLAY(display), SDL_WINDOWPOS_CENTERED_DISPLAY(display),
 	                          ww, wh, flags);
 	if (!v->win) {
@@ -402,8 +402,8 @@ static void open_pads(void) {
 
 bool ui_init(Config* c, bool wantDual) {
 	cfg = c;
-	debug = getenv("GBADS_DEBUG") != NULL;
-	SDL_SetHint(SDL_HINT_APP_NAME, "GBA DS");
+	debug = getenv("PSXDS_DEBUG") != NULL;
+	SDL_SetHint(SDL_HINT_APP_NAME, "PSX-DS");
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, cfg->smooth ? "linear" : "nearest");
 #ifdef __ANDROID__
 	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft");
@@ -415,7 +415,7 @@ bool ui_init(Config* c, bool wantDual) {
 	 * coming regardless. The environment variable still overrides this. */
 	SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
 #endif
-	setenv("SDL_VIDEO_WAYLAND_WMCLASS", "gba-ds", 0);
+	setenv("SDL_VIDEO_WAYLAND_WMCLASS", "psx-ds", 0);
 	/* (the web build's sound too: web/sdl_audio_web.c, pulled by the page) */
 	const Uint32 audioInit = SDL_INIT_AUDIO;
 	if (SDL_Init(SDL_INIT_VIDEO | audioInit | SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) != 0) {
@@ -439,16 +439,16 @@ bool ui_init(Config* c, bool wantDual) {
 	 * Presentation window in Java (android.c). It's view 1, drawn at
 	 * ui_present: with the GPU (the game screen's renderer, made to draw into
 	 * the other window), or failing that with a software renderer. */
-	/* (GBADS_WINDOW: tools/androidtest, a window of that size, as SDL's
+	/* (PSXDS_WINDOW: tools/androidtest, a window of that size, as SDL's
 	 * offscreen driver makes a full-screen one 1024x768) */
-	if (!create_view(&views[0], 0, "GBA DS", !getenv("GBADS_WINDOW"), 1024, 768)) return false;
+	if (!create_view(&views[0], 0, "PSX-DS", !getenv("PSXDS_WINDOW"), 1024, 768)) return false;
 	nViews = 1;
 	int sw, sh, w0, h0;
 	SDL_RendererInfo ri;
 	SDL_GetRendererOutputSize(views[0].ren, &w0, &h0);
 	bool gles = SDL_GetRendererInfo(views[0].ren, &ri) == 0 && !strncmp(ri.name, "opengles", 8);
 	fprintf(stderr, "game screen renderer: %s, %dx%d\n", gles ? ri.name : "not OpenGL ES", w0, h0);
-	if (strcmp(cfg->layout, "single") && android_second_size(&sw, &sh) && gles && !getenv("GBADS_SOFT_SECOND") &&
+	if (strcmp(cfg->layout, "single") && android_second_size(&sw, &sh) && gles && !getenv("PSXDS_SOFT_SECOND") &&
 	    android_second_gpu_init(w0, h0)) {
 		views[1].ren = views[0].ren;
 		views[1].offwin = views[1].retained = true;
@@ -478,7 +478,7 @@ bool ui_init(Config* c, bool wantDual) {
 	bool dual = !strcmp(cfg->layout, "dual") ||
 	            (wantDual && !strcmp(cfg->layout, "auto") && displays >= 2 && !underSway);
 	bool fullscreen = strcmp(driver, "offscreen") && strcmp(driver, "dummy") && strcmp(driver, "x11") &&
-	                  strcmp(driver, "windows") && strcmp(driver, "cocoa") && !getenv("GBADS_WINDOWED");
+	                  strcmp(driver, "windows") && strcmp(driver, "cocoa") && !getenv("PSXDS_WINDOWED");
 	fprintf(stderr, "video driver %s, %d display(s)%s -> %s\n", driver, displays, underSway ? ", sway" : "",
 	        dual && displays >= 2 ? "two windows" : "one window");
 	for (int i = 0; i < displays && i < 4; ++i) {
@@ -490,8 +490,8 @@ bool ui_init(Config* c, bool wantDual) {
 	fprintf(stderr, "touch devices: %d\n", SDL_GetNumTouchDevices());
 	if (dual && displays >= 2) {
 		nViews = 2;
-		if (!create_view(&views[0], 0, "GBA DS", true, 720, 480) ||
-		    !create_view(&views[1], 1, "GBA DS map", true, 720, 480)) {
+		if (!create_view(&views[0], 0, "PSX-DS", true, 720, 480) ||
+		    !create_view(&views[1], 1, "PSX-DS map", true, 720, 480)) {
 			return false;
 		}
 	} else {
@@ -505,7 +505,7 @@ bool ui_init(Config* c, bool wantDual) {
 			if (SDL_GetDesktopDisplayMode(0, &m) == 0 && m.w > 0 && m.h > 0) ww = m.w, wh = m.h;
 			fprintf(stderr, "BananaOS: both panels as one window, %dx%d\n", ww, wh);
 		}
-		if (!create_view(&views[0], 0, "GBA DS", fullscreen, ww, wh)) return false;
+		if (!create_view(&views[0], 0, "PSX-DS", fullscreen, ww, wh)) return false;
 	}
 	ui_layout();
 	return true;
@@ -703,10 +703,10 @@ static void layout_screens(void) {
 	int w, h;
 	SDL_GetRendererOutputSize(views[0].ren, &w, &h);
 	/* tests: two screens of other sizes stacked in the window (the top one
-	 * first), as on devices whose screens differ: GBADS_SCREENS=1920x1080,1240x1080
-	 * (with GBADS_WINDOW the larger width x the heights together) */
+	 * first), as on devices whose screens differ: PSXDS_SCREENS=1920x1080,1240x1080
+	 * (with PSXDS_WINDOW the larger width x the heights together) */
 	int tw0, th0, tw1, th1;
-	if (getenv("GBADS_SCREENS") && sscanf(getenv("GBADS_SCREENS"), "%dx%d,%dx%d", &tw0, &th0, &tw1, &th1) == 4) {
+	if (getenv("PSXDS_SCREENS") && sscanf(getenv("PSXDS_SCREENS"), "%dx%d,%dx%d", &tw0, &th0, &tw1, &th1) == 4) {
 		nScreens = 2;
 		screens[0] = (Screen) { 0, { (w - tw0) / 2, 0, tw0, th0 } };
 		screens[1] = (Screen) { 0, { (w - tw1) / 2, th0, tw1, th1 } };
@@ -779,7 +779,7 @@ int ui_other_screen(void) {
 
 static int view_of_window(Uint32 id) {
 #ifdef __ANDROID__
-	if (id == GBADS_SECOND_WINDOW_ID) return nViews == 2 ? 1 : -1;
+	if (id == PSXDS_SECOND_WINDOW_ID) return nViews == 2 ? 1 : -1;
 #endif
 	for (int i = 0; i < nViews; ++i) {
 		if (SDL_GetWindowID(views[i].win) == id) return i;
@@ -891,7 +891,7 @@ static void evdev_touch_poll(void) {
 			evAx[a].min = ai.minimum, evAx[a].max = ai.maximum;
 		}
 		if (cfg->touchRotate < 0) cfg->touchRotate = evAx[0].max - evAx[0].min >= evAx[1].max - evAx[1].min ? 0 : 90;
-		/* ours alone while GBA DS runs (fails if another program holds it) */
+		/* ours alone while PSX-DS runs (fails if another program holds it) */
 		int grab = ioctl(evTouchFd, EVIOCGRAB, 1);
 		char name[64] = "?";
 		ioctl(evTouchFd, EVIOCGNAME(sizeof(name)), name);
@@ -936,15 +936,15 @@ static void evdev_touch_poll(void) {
 	}
 }
 
-/* GBA DS's own volume, where the system leaves the volume keys to the
- * program running (launch.sh sets GBADS_VOLUME to the file that keeps it:
+/* PSX-DS's own volume, where the system leaves the volume keys to the
+ * program running (launch.sh sets PSXDS_VOLUME to the file that keeps it:
  * the RG DS Plus's Stock Linux OS, whose ports play straight to the sound card).
  * The keys come as key events, from their input device, or as raw joystick
- * buttons (GBADS_VOLUME_BUTTONS=up,down). */
+ * buttons (PSXDS_VOLUME_BUTTONS=up,down). */
 static int softVolume = -1; /* 0-100; -1: not read yet */
 
 static const char* volume_file(void) {
-	return getenv("GBADS_VOLUME");
+	return getenv("PSXDS_VOLUME");
 }
 
 int ui_volume(void) {
@@ -977,7 +977,7 @@ static void volume_button(int button) {
 	static int vb[2] = { -2, -2 };
 	if (vb[0] == -2) {
 		vb[0] = vb[1] = -1;
-		const char* e = getenv("GBADS_VOLUME_BUTTONS");
+		const char* e = getenv("PSXDS_VOLUME_BUTTONS");
 		if (e) sscanf(e, "%d,%d", &vb[0], &vb[1]);
 	}
 	if (button >= 0 && button == vb[0]) volume_key(true);
@@ -1206,7 +1206,7 @@ void ui_read_buttons(void) {
 			if (j && cfg->homeButton < SDL_JoystickNumButtons(j) && SDL_JoystickGetButton(j, cfg->homeButton)) rawHome = true;
 		}
 	}
-	/* GBA-style: A is the right face button, B the bottom one */
+	/* PS1-style: A is the right face button, B the bottom one */
 	btnNow[B_A] = cfg->abSwap ? phys[SDL_CONTROLLER_BUTTON_A] : phys[SDL_CONTROLLER_BUTTON_B];
 	btnNow[B_B] = cfg->abSwap ? phys[SDL_CONTROLLER_BUTTON_B] : phys[SDL_CONTROLLER_BUTTON_A];
 	btnNow[B_X] = phys[SDL_CONTROLLER_BUTTON_X];
@@ -1272,13 +1272,13 @@ static uint32_t tex_version(SDL_Texture* t) {
 	return 0;
 }
 
-/* Colour correction: mGBA's GBA Color shader (res/shaders/gba-color.shader,
- * by Pokefan531 and hunterk), as mGBA runs it by default (color_mode 1,
+/* Colour correction: SwanStation's PS1 Color shader (res/shaders/gba-color.shader,
+ * by Pokefan531 and hunterk), as SwanStation runs it by default (color_mode 1,
  * sRGB; darken_screen 0.5): each channel to the power 2.5 (target gamma 2.0
  * + 0.5), times the luminance 0.93, clamped, through the colour matrix
  * (GLSL's mat4 is filled column by column: these are its rows), to the
- * power 1 / 2.0 (display gamma). The GBA has 32768 colours: a table, by the
- * 5-bit colour each 8-bit one came from (mGBA: c << 3 | c >> 2). */
+ * power 1 / 2.0 (display gamma). The PS1 has 32768 colours: a table, by the
+ * 5-bit colour each 8-bit one came from (SwanStation: c << 3 | c >> 2). */
 static uint32_t* ccLut;
 static bool ccOn;              /* pictures go through ccLut */
 static bool ccWant;            /* Display > Color Correction */
@@ -1632,7 +1632,7 @@ void ui_sync_view(int view) {
 double ui_display_hz(int view) {
 	static double cached = -1;
 	if (view < 0 || view >= nViews || !views[view].win) return 0;
-	if (getenv("GBADS_DISPLAY_HZ")) return atof(getenv("GBADS_DISPLAY_HZ")); /* testing */
+	if (getenv("PSXDS_DISPLAY_HZ")) return atof(getenv("PSXDS_DISPLAY_HZ")); /* testing */
 	double hz = 0;
 #ifndef __ANDROID__
 	if (cached >= 0) return cached;
@@ -1682,11 +1682,11 @@ void ui_brightness(int top, int bottom) {
 
 void ui_present(void) {
 	{
-		/* testing (issue #50): GBADS_TEST_PRESENT_STALL=MS,EVERY holds every
+		/* testing (issue #50): PSXDS_TEST_PRESENT_STALL=MS,EVERY holds every
 		 * EVERY-th present up for MS ms, as one player's system did */
 		static int stallMs = -1, stallEvery, presents;
 		if (stallMs < 0) {
-			const char* e = getenv("GBADS_TEST_PRESENT_STALL");
+			const char* e = getenv("PSXDS_TEST_PRESENT_STALL");
 			stallMs = 0;
 			if (e && sscanf(e, "%d,%d", &stallMs, &stallEvery) != 2) stallMs = 0;
 		}
@@ -1930,7 +1930,7 @@ static void pattern_at(int sh, double u, double v, double k, float out[3]) {
 	out[0] = out[1] = out[2] = 1;
 	if (sh == SH_SCANLINES) {
 		/* the bottom quarter of each row of pixels, darker than the grid's
-		 * lines (there are half as many), as mGBA's Scanlines at its 0.5 */
+		 * lines (there are half as many), as SwanStation's Scanlines at its 0.5 */
 		if (v >= 0.75) out[0] = out[1] = out[2] = (float) (1 - SDL_min(1.0, k * 1.4));
 	} else if (sh == SH_SOFT) {
 		/* darker toward the cell's edges, most at the corners: zfast_lcd's
@@ -1939,7 +1939,7 @@ static void pattern_at(int sh, double u, double v, double k, float out[3]) {
 		out[0] = out[1] = out[2] = (float) (1 - SDL_min(1.0, k * 1.3) * d * d * d * d);
 	} else if (sh >= SH_SUB_LIGHT && sh <= SH_SUB_STRONG) {
 		/* red, green and blue stripes and a gap, a quarter of the cell each
-		 * (one screen pixel each at 4x), and a darker bottom row: mGBA's
+		 * (one screen pixel each at 4x), and a darker bottom row: SwanStation's
 		 * AGB-001 and RetroArch's lcd3x */
 		int p = sh - SH_SUB_LIGHT, col = (int) (u * 4);
 		if (col >= 3) {
@@ -2406,9 +2406,9 @@ static struct {
 static bool scrapedProvisional;
 
 /* The player's own or a scraped logo sized as the game's own (GEN-11): as
- * tall as the extracted logo (refH GBA pixels; until that exists, within LOGO_BOX_W x LOGO_BOX_H),
- * never wider than the GBA screen. Pixelated: one pixel per GBA pixel (*sub
- * 1); otherwise LOGO_SUB pixels per GBA pixel, the same size on the screen. */
+ * tall as the extracted logo (refH PS1 pixels; until that exists, within LOGO_BOX_W x LOGO_BOX_H),
+ * never wider than the PS1 screen. Pixelated: one pixel per PS1 pixel (*sub
+ * 1); otherwise LOGO_SUB pixels per PS1 pixel, the same size on the screen. */
 #define LOGO_BOX_W 224
 #define LOGO_BOX_H 64
 static SDL_Surface* sized_surface(const Config* c, const char* src, const char* code, int* sub) {
@@ -2430,11 +2430,11 @@ static SDL_Surface* sized_surface(const Config* c, const char* src, const char* 
 	}
 	const char* ext = strrchr(src, '.');
 	img = trim_alpha(img, ext && (!strcasecmp(ext, ".jpg") || !strcasecmp(ext, ".jpeg")));
-	float gw, gh; /* the size in GBA pixels */
+	float gw, gh; /* the size in PS1 pixels */
 	if (refH > 0) {
-		gh = (float) SDL_min(refH, GBA_H);
+		gh = (float) SDL_min(refH, SCREEN_H);
 		gw = (float) img->w * gh / img->h;
-		if (gw > GBA_W) gw = GBA_W, gh = (float) img->h * GBA_W / img->w;
+		if (gw > SCREEN_W) gw = SCREEN_W, gh = (float) img->h * SCREEN_W / img->w;
 	} else {
 		float sc = SDL_min((float) LOGO_BOX_W / img->w, (float) LOGO_BOX_H / img->h);
 		gw = img->w * sc, gh = img->h * sc;
@@ -2687,7 +2687,7 @@ void ui_fill_round(int screen, SDL_Rect r, SDL_Color c, int radius) {
 
 
 /* ---------------------------------------------------------- keys and the theme
- * The menus' buttons look like a GBA's: a raised key with an edge under it.
+ * The menus' buttons look like a PS1's: a raised key with an edge under it.
  * Dark (the default): dark grey keys with a light rim and a heavy dark edge.
  * Light: the web player's pale grey keys. Text on a plain key in the light
  * theme is drawn in dark ink: ui_key notes where the keys are, and

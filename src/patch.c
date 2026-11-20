@@ -8,9 +8,9 @@
 #include <string.h>
 #include <sys/stat.h>
 
-#define PATCH_MAX_ROM (32u * 1024 * 1024) /* the GBA's largest */
+#define PATCH_MAX_ROM (32u * 1024 * 1024) /* the PS1's largest */
 
-uint32_t doCrc32(const void* buf, size_t size); /* (libmgba's: its header wants zlib.h) */
+uint32_t doCrc32(const void* buf, size_t size); /* (SwanStation's: its header wants zlib.h) */
 
 bool patch_find(const char* romPath, char* out, size_t outSize) {
 	static const char* const exts[] = { ".ips", ".ups", ".bps", ".xdelta", ".vcdiff",

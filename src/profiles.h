@@ -1,12 +1,12 @@
 /* Per-game knowledge: how to open the map and how to recognise it. */
-#ifndef GBADS_PROFILES_H
-#define GBADS_PROFILES_H
+#ifndef PSXDS_PROFILES_H
+#define PSXDS_PROFILES_H
 
 #include "emu.h"
 #include "logo_masks.h"
 
 /* Behind the logo on the second screen, and around what a game shows
- * there that doesn't fill it (GEN-1): dark grey, so the GBA screen's
+ * there that doesn't fill it (GEN-1): dark grey, so the PS1 screen's
  * 240x160 shows against the black around it (ABGR8888) */
 #define SCREEN_GREY 0xFF303030u
 /* behind something live on the second screen (a HUD, a card's pieces, the
@@ -297,10 +297,10 @@ typedef struct MapProfile {
 		} live;
 	} tall;
 	/* A second button layout for games ported from four-face-button
-	 * consoles (Tony Hawk's: GBA L / R stand in for two face buttons). The
-	 * four-face layout puts GBA A on the top face button, B on the bottom,
+	 * consoles (Tony Hawk's: PS1 L / R stand in for two face buttons). The
+	 * four-face layout puts PS1 A on the top face button, B on the bottom,
 	 * L on the left and R on the right. A picker on the second screen
-	 * chooses it, the GBA layout, or Auto: four-face only while the player
+	 * chooses it, the PS1 layout, or Auto: four-face only while the player
 	 * controls the character: the display is in `mode` and there are
 	 * sprites at each of the `hud` positions (the in-game HUD, which menus
 	 * and the pause screen don't show). */
@@ -313,10 +313,10 @@ typedef struct MapProfile {
 		MemProbe playing[2];
 		/* Games ported from the SNES (Super Mario Advance 2): an "SNES"
 		 * layout instead of the four-face one. Face buttons by position give
-		 * these GBA keys, and both shoulders give GBA L. The game pans the
+		 * these PS1 keys, and both shoulders give PS1 L. The game pans the
 		 * camera with L toward where the player faces; the SNES panned left
 		 * with L and right with R. So while a shoulder is held where `when`
-		 * matches (in a level, not paused; elsewhere the GBA layout), the
+		 * matches (in a level, not paused; elsewhere the PS1 layout), the
 		 * byte at `pan` (the way the camera pans while L is held: 1 right,
 		 * 2 left) is set before each frame. */
 		struct {
@@ -419,7 +419,7 @@ typedef struct MapProfile {
 			 * map status bar, from the bottom to the top */
 			HudMove moves[HUD_MOVES];
 			/* the second screen's picture behind it is the last map
-			 * picture (a full GBA screen) instead of the logo (Super
+			 * picture (a full PS1 screen) instead of the logo (Super
 			 * Mario Advance 4: its status bar over the inventory) */
 			bool mapBelow;
 		} alt;
@@ -434,7 +434,7 @@ typedef struct MapProfile {
 		struct { int x0, y0, x1, y1; } sign, map;
 		/* The map's place instead (F-Zero: GP Legend): the `map` box itself
 		 * (not measured), drawn `scale` second-screen pixels per HUD pixel
-		 * (2: twice as big), its centre at cx, its bottom at bottom (GBA
+		 * (2: twice as big), its centre at cx, its bottom at bottom (PS1
 		 * pixels of the second screen); scale 0: Mario Kart's way */
 		struct {
 			int scale, cx, bottom;
@@ -529,7 +529,7 @@ typedef struct MapProfile {
 		 * below it, at its own size (Super Mario Advance 2), instead of a
 		 * backdrop. */
 		bool logoBelow;
-		/* The last map picture (a full GBA screen) behind the HUD instead
+		/* The last map picture (a full PS1 screen) behind the HUD instead
 		 * of the logo, as alt.mapBelow does on the other layer (Mario vs.
 		 * Donkey Kong: its pause box's top lines over the HUD) */
 		bool mapBelow;
@@ -750,7 +750,7 @@ typedef struct MapProfile {
 	 * hidden only with map_crop): Tony Hawk's Pro Skater 3's goal list,
 	 * its panel without the scene behind. */
 	unsigned captureLayers;
-	/* with captureLayers: the colour behind them (GBA BGR555; 0: black):
+	/* with captureLayers: the colour behind them (PS1 BGR555; 0: black):
 	 * River City Ransom EX's Status screen on the game's pause blue */
 	uint16_t captureBack;
 	/* Parts of the map capture (screen rects, inclusive) taken from a render
@@ -845,7 +845,7 @@ bool profile_release_name(const char* gameCode, char* out, size_t size);
 /* The ROM being played (its code and CRC32; NULL: none): a known colour
  * patch's result gets its profile with the colours it changes swapped */
 void profile_set_rom(const char* gameCode, uint32_t crc);
-/* A patch GBA DS knows (docs/patches.md, src/dumps_data.h), by its file's
+/* A patch PSX-DS knows (docs/patches.md, src/dumps_data.h), by its file's
  * checksum: the CRC32 of the file without its last four bytes, and its size */
 typedef struct {
 	char code[5];      /* the release it's for ("" if not known) */

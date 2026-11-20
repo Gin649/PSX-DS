@@ -10,10 +10,10 @@
  *
  * The picture: PS1 games draw at many sizes (256 to 640 wide, 224 to 480
  * high) and change size mid-game. The rest of the app expects one fixed
- * picture (GBA_W x GBA_H, now 640x480, 4:3), so each frame is scaled into
+ * picture (SCREEN_W x SCREEN_H, now 640x480, 4:3), so each frame is scaled into
  * it, nearest pixel.
  *
- * What the GBA build did with the GBA's video hardware (sprite hiding, layer
+ * What the PS1 build did with the PS1's video hardware (sprite hiding, layer
  * toggles, the HUD split, VRAM and OAM access) has no PS1 equivalent: the
  * PS1 draws polygons into its own video memory. Those functions are kept so
  * the rest of the app builds, and do nothing. */
@@ -114,7 +114,7 @@ void emu_set_option(const char* key, const char* value) {
 static bool env_slot(int i, unsigned cmd, void* data);
 
 static void log_slot(int i, enum retro_log_level level, const char* fmt, va_list ap) {
-	if (level < RETRO_LOG_INFO && !getenv("GBADS_DEBUG")) return;
+	if (level < RETRO_LOG_INFO && !getenv("PSXDS_DEBUG")) return;
 	char line[512];
 	vsnprintf(line, sizeof line, fmt, ap);
 	size_t n = strlen(line);
@@ -122,27 +122,27 @@ static void log_slot(int i, enum retro_log_level level, const char* fmt, va_list
 	fprintf(stderr, "swanstation[%d]: %s\n", i, line);
 }
 
-/* each frame scaled into the Emu's fixed GBA_W x GBA_H picture, bytes R,G,B,X */
+/* each frame scaled into the Emu's fixed SCREEN_W x SCREEN_H picture, bytes R,G,B,X */
 static void video_slot(int i, const void* data, unsigned w, unsigned h, size_t pitch) {
 	Slot* s = &slots[i];
 	if (!data || !w || !h || !s->owner || !s->owner->fb) return; /* duped: keep the last */
 	s->srcW = w;
 	s->srcH = h;
 	uint32_t* dst = s->owner->fb;
-	unsigned xs[GBA_W];
-	for (int x = 0; x < GBA_W; x++) xs[x] = (unsigned)x * w / GBA_W;
-	for (int y = 0; y < GBA_H; y++) {
-		const uint8_t* row = (const uint8_t*)data + (size_t)((unsigned)y * h / GBA_H) * pitch;
-		uint32_t* out = dst + y * GBA_W;
+	unsigned xs[SCREEN_W];
+	for (int x = 0; x < SCREEN_W; x++) xs[x] = (unsigned)x * w / SCREEN_W;
+	for (int y = 0; y < SCREEN_H; y++) {
+		const uint8_t* row = (const uint8_t*)data + (size_t)((unsigned)y * h / SCREEN_H) * pitch;
+		uint32_t* out = dst + y * SCREEN_W;
 		if (s->pixfmt == RETRO_PIXEL_FORMAT_XRGB8888) {
 			const uint32_t* src = (const uint32_t*)row;
-			for (int x = 0; x < GBA_W; x++) {
+			for (int x = 0; x < SCREEN_W; x++) {
 				uint32_t p = src[xs[x]];
 				out[x] = 0xFF000000u | ((p & 0xFF) << 16) | (p & 0xFF00) | ((p >> 16) & 0xFF);
 			}
 		} else {
 			const uint16_t* src = (const uint16_t*)row;
-			for (int x = 0; x < GBA_W; x++) {
+			for (int x = 0; x < SCREEN_W; x++) {
 				uint16_t p = src[xs[x]];
 				uint32_t r, g, b;
 				if (s->pixfmt == RETRO_PIXEL_FORMAT_RGB565) {
@@ -400,7 +400,7 @@ bool emu_is_rom_name(const char* name) {
 
 bool emu_is_archive_name(const char* name) { (void)name; return false; }
 
-/* The GBA build read the cartridge header (title at 0xA0, code at 0xAC).
+/* The PS1 build read the cartridge header (title at 0xA0, code at 0xAC).
  * Until PSX-DS reads a disc's serial, the header is made up: the file name
  * as the title and "PSX1" as the code. */
 bool emu_rom_header(const char* path, uint8_t* out, size_t n) {
@@ -482,7 +482,7 @@ static void card_write(Slot* s) {
 
 bool emu_open(Emu* e, const char* romPath, const char* savePath, bool audio) {
 	memset(e, 0, sizeof *e);
-	e->fb = calloc(GBA_W * GBA_H, sizeof(uint32_t));
+	e->fb = calloc(SCREEN_W * SCREEN_H, sizeof(uint32_t));
 	if (!e->fb) return false;
 	Slot* s = slot_take(e);
 	if (!s) {
@@ -534,7 +534,7 @@ void emu_close(Emu* e) {
 
 /* --- running ------------------------------------------------------------------------- */
 
-/* GBA DS's keys (emu.h K_*) as libretro's PS1 pad bits */
+/* PSX-DS's keys (emu.h K_*) as libretro's PS1 pad bits */
 static uint16_t pad_bits(uint32_t keys) {
 	static const struct { uint32_t k; unsigned id; } map[] = {
 		{ K_A, RETRO_DEVICE_ID_JOYPAD_A },          /* right: Circle */
@@ -653,16 +653,16 @@ bool emu_state_load_file(Emu* e, const char* path) {
 	return ok;
 }
 
-StateFileKind emu_state_file_kind(Emu* e, const char* path, bool* fromGbads) {
+StateFileKind emu_state_file_kind(Emu* e, const char* path, bool* fromPsxds) {
 	(void)e;
-	if (fromGbads) *fromGbads = false;
+	if (fromPsxds) *fromPsxds = false;
 	struct stat st;
 	if (stat(path, &st) != 0) return STATE_FILE_NONE;
 	uint32_t extraN;
 	FILE* f = state_open(path, &extraN, NULL);
 	if (!f) return STATE_FILE_OTHER_CORE;
 	fclose(f);
-	if (fromGbads) *fromGbads = extraN > 0;
+	if (fromPsxds) *fromPsxds = extraN > 0;
 	return STATE_FILE_MGBA;
 }
 
@@ -762,7 +762,7 @@ int emu_cheats_add(Emu* e, const char* name, const char* const* codes, int n, in
 	return added;
 }
 
-/* --- the GBA's video hardware: nothing on the PS1 ------------------------------------ */
+/* --- the PS1's video hardware: nothing on the PS1 ------------------------------------ */
 
 void emu_hide_sprites(Emu* e, const SpriteRule* r, int n) { (void)e; (void)r; (void)n; }
 void emu_keep_sprites(Emu* e, const SpriteRule* r, int n) { (void)e; (void)r; (void)n; }

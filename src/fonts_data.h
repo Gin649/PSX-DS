@@ -1,6 +1,6 @@
 /* The UI fonts, embedded (tools/embed_fonts.py). */
-#ifndef GBADS_FONTS_DATA_H
-#define GBADS_FONTS_DATA_H
+#ifndef PSXDS_FONTS_DATA_H
+#define PSXDS_FONTS_DATA_H
 
 #include <stddef.h>
 

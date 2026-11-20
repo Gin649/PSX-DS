@@ -9,9 +9,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define CFG_NAME "es_systems_gbads.cfg"
-#define SCRIPT_NAME "gbads-launch.sh"
-#define EMU_NAME "gbads"
+#define CFG_NAME "es_systems_psxds.cfg"
+#define SCRIPT_NAME "psxds-launch.sh"
+#define EMU_NAME "psxds"
 #define RUNEMU "/usr/bin/runemu.sh"
 
 static void join(char* out, size_t n, const char* dir, const char* name) {
@@ -89,8 +89,8 @@ static bool find_gba_system(const char* xml, const char** start, const char** en
 
 /* This program's own folder (where launch.sh and es-play.sh are). */
 static bool app_dir(char* out, size_t n) {
-	if (getenv("GBADS_HOME") && getenv("GBADS_HOME")[0]) { /* run from a copy (main.c) */
-		snprintf(out, n, "%s", getenv("GBADS_HOME"));
+	if (getenv("PSXDS_HOME") && getenv("PSXDS_HOME")[0]) { /* run from a copy (main.c) */
+		snprintf(out, n, "%s", getenv("PSXDS_HOME"));
 		return true;
 	}
 	char exe[PATH_MAX];
@@ -106,29 +106,29 @@ static bool app_dir(char* out, size_t n) {
 
 static const char* const SCRIPT_TEXT =
 	"#!/bin/bash\n"
-	"# Written by GBA DS (game list > Settings > GBA DS in EmulationStation) and\n"
-	"# removed when that's switched off. EmulationStation runs this for GBA games\n"
-	"# instead of " RUNEMU " (see " CFG_NAME " next to it). With GBA DS picked\n"
-	"# as the emulator, the game starts in GBA DS, which runemu.sh runs as a Port\n"
+	"# Written by PSX-DS (game list > Settings > PSX-DS in EmulationStation) and\n"
+	"# removed when that's switched off. EmulationStation runs this for PS1 games\n"
+	"# instead of " RUNEMU " (see " CFG_NAME " next to it). With PSX-DS picked\n"
+	"# as the emulator, the game starts in PSX-DS, which runemu.sh runs as a Port\n"
 	"# (so ROCKNIX's settings for Ports apply); anything else goes to runemu.sh\n"
 	"# unchanged.\n"
-	"GBADS_DIR='%s'\n"
+	"PSXDS_DIR='%s'\n"
 	"case \" $* \" in\n"
 	"*\" --emulator=" EMU_NAME " \"*)\n"
 	"\tROM=\"$1\"\n"
 	"\tshift\n"
 	"\targs=()\n"
-	"\tif [ -f \"$GBADS_DIR/es-play.sh\" ]; then\n"
-	"\t\texport GBADS_ROM=\"$ROM\"\n"
+	"\tif [ -f \"$PSXDS_DIR/es-play.sh\" ]; then\n"
+	"\t\texport PSXDS_ROM=\"$ROM\"\n"
 	"\t\tfor a in \"$@\"; do\n"
 	"\t\t\tcase \"$a\" in\n"
 	"\t\t\t-P*) args+=(-Pports) ;;\n"
 	"\t\t\t*) args+=(\"$a\") ;;\n"
 	"\t\t\tesac\n"
 	"\t\tdone\n"
-	"\t\texec " RUNEMU " \"$GBADS_DIR/es-play.sh\" \"${args[@]}\"\n"
+	"\t\texec " RUNEMU " \"$PSXDS_DIR/es-play.sh\" \"${args[@]}\"\n"
 	"\tfi\n"
-	"\t# GBA DS isn't there any more: play the game in mGBA instead\n"
+	"\t# PSX-DS isn't there any more: play the game in SwanStation instead\n"
 	"\tfor a in \"$@\"; do\n"
 	"\t\tcase \"$a\" in\n"
 	"\t\t--emulator=*) args+=(--emulator=retroarch) ;;\n"
@@ -168,7 +168,7 @@ bool es_present(const Config* cfg) {
 static bool install(const Config* cfg, char* msg, size_t msgSize) {
 	char dir[600];
 	if (!app_dir(dir, sizeof(dir))) {
-		snprintf(msg, msgSize, tr("Can't find the GBA DS folder."));
+		snprintf(msg, msgSize, tr("Can't find the PSX-DS folder."));
 		return false;
 	}
 	char src[700];
@@ -199,7 +199,7 @@ static bool install(const Config* cfg, char* msg, size_t msgSize) {
 
 	/* the launch command with runemu.sh swapped for our script */
 	size_t pre = (size_t) (run - cmd), post = cmdLen - pre - strlen(RUNEMU);
-	/* the emulator list without any old gbads entry, plus ours */
+	/* the emulator list without any old psxds entry, plus ours */
 	size_t cap = cmdLen + emuLen + strlen(script) + 4096;
 	char* out = malloc(cap);
 	if (!out) {
@@ -208,8 +208,8 @@ static bool install(const Config* cfg, char* msg, size_t msgSize) {
 	}
 	int n = snprintf(out, cap,
 	                 "<?xml version=\"1.0\"?>\n"
-	                 "<!-- Written by GBA DS (game list > Settings > GBA DS in EmulationStation), from\n"
-	                 "     %s. EmulationStation merges it into its GBA system: the emulator list\n"
+	                 "<!-- Written by PSX-DS (game list > Settings > PSX-DS in EmulationStation), from\n"
+	                 "     %s. EmulationStation merges it into its PS1 system: the emulator list\n"
 	                 "     gains \"" EMU_NAME "\" and games start through " SCRIPT_NAME ". Delete this file\n"
 	                 "     (or switch the setting off) to undo. -->\n"
 	                 "<systemList>\n"
@@ -288,8 +288,8 @@ void es_integration_refresh(const Config* cfg) {
 #define BANANA_DEFAULT "/etc/banana/systems.conf"
 #define BANANA_USER "/data/banana/systems.conf"
 #endif
-#define BANANA_HEADER "# gba-ds: copied from " BANANA_DEFAULT " by GBA DS"
-#define BANANA_MARK "# gba-ds: run = "
+#define BANANA_HEADER "# psx-ds: copied from " BANANA_DEFAULT " by PSX-DS"
+#define BANANA_MARK "# psx-ds: run = "
 
 bool banana_present(void) {
 	struct stat st;
@@ -328,7 +328,7 @@ static bool gba_run_line(const char* t, const char** start, const char** end) {
 static bool banana_on(char* msg, size_t msgSize) {
 	char dir[600];
 	if (!app_dir(dir, sizeof(dir))) {
-		snprintf(msg, msgSize, tr("Couldn't find GBA DS's folder."));
+		snprintf(msg, msgSize, tr("Couldn't find PSX-DS's folder."));
 		return false;
 	}
 	bool copy = access(BANANA_USER, F_OK) != 0;
@@ -336,11 +336,11 @@ static bool banana_on(char* msg, size_t msgSize) {
 	const char *a, *b;
 	if (!t || !gba_run_line(t, &a, &b)) {
 		free(t);
-		snprintf(msg, msgSize, tr("BananaOS's systems list has no Game Boy Advance entry."));
+		snprintf(msg, msgSize, tr("BananaOS's systems list has no PlayStation entry."));
 		return false;
 	}
-	/* the original run line, kept as a comment, then GBA DS's: its script
-	 * while it's there, else the original (GBA DS removed without
+	/* the original run line, kept as a comment, then PSX-DS's: its script
+	 * while it's there, else the original (PSX-DS removed without
 	 * switching this off: the list's games still start, in its emulator).
 	 * banana-ui runs the line through a shell, %ROM% quoted. */
 	const char* v = strchr(a, '=');
@@ -351,7 +351,7 @@ static bool banana_on(char* msg, size_t msgSize) {
 	/* (the fallback: the original with every launcher's "run-" written run''-:
 	 * the same command to the shell, but banana-ui gives a line that names
 	 * run-retroarch (run-ps1, run-bananafront, run-pico8) one panel, keeping
-	 * the other for its own: GBA DS needs both) */
+	 * the other for its own: PSX-DS needs both) */
 	char* fallback = malloc(vlen * 3 + 1);
 	size_t fl = 0;
 	for (size_t i = 0; i < vlen; ++i) {
@@ -365,8 +365,8 @@ static bool banana_on(char* msg, size_t msgSize) {
 	size_t n = strlen(t) + vlen + fl + 2 * strlen(dir) + 512;
 	char* out = malloc(n);
 	snprintf(out, n, "%s%.*s" BANANA_MARK "%.*s\nrun = if [ -f '%s/banana-play.sh' ]; then bash '%s/banana-play.sh' %%ROM%%; else %s; fi\n%s",
-	         copy ? BANANA_HEADER " (game list > Settings: GBA DS in BananaOS's GBA list).\n"
-	                "# Switching that off puts the Game Boy Advance line back, and deletes this copy\n"
+	         copy ? BANANA_HEADER " (game list > Settings: PSX-DS in BananaOS's PS1 list).\n"
+	                "# Switching that off puts the PlayStation line back, and deletes this copy\n"
 	                "# if nothing else in it was changed.\n" : "",
 	         (int) (a - t), t, (int) vlen, v, dir, dir, fallback, b);
 	free(fallback);
@@ -377,7 +377,7 @@ static bool banana_on(char* msg, size_t msgSize) {
 		snprintf(msg, msgSize, tr("Couldn't write %s."), BANANA_USER);
 		return false;
 	}
-	fprintf(stderr, "banana: GBA DS set for the Game Boy Advance list in %s\n", BANANA_USER);
+	fprintf(stderr, "banana: PSX-DS set for the PlayStation list in %s\n", BANANA_USER);
 	snprintf(msg, msgSize, tr("On. Restart BananaOS (Settings > System) for its menu to use it."));
 	return true;
 }
@@ -389,7 +389,7 @@ static bool banana_off(char* msg, size_t msgSize) {
 		snprintf(msg, msgSize, tr("Off."));
 		return true;
 	}
-	/* "# gba-ds: run = ORIG" + the "run = ..." after it -> "run = ORIG" */
+	/* "# psx-ds: run = ORIG" + the "run = ..." after it -> "run = ORIG" */
 	char* m = strstr(t, BANANA_MARK);
 	char* mEnd = strchr(m, '\n');
 	char* next = mEnd ? strchr(mEnd + 1, '\n') : NULL;
@@ -397,7 +397,7 @@ static bool banana_off(char* msg, size_t msgSize) {
 	char* out = malloc(n);
 	snprintf(out, n, "%.*srun = %.*s\n%s", (int) (m - t), t, (int) ((mEnd ? mEnd : m + strlen(m)) - (m + strlen(BANANA_MARK))),
 	         m + strlen(BANANA_MARK), next ? next + 1 : "");
-	/* the copy GBA DS made: its header out, and gone if it's the default again */
+	/* the copy PSX-DS made: its header out, and gone if it's the default again */
 	bool ours = strncmp(out, BANANA_HEADER, strlen(BANANA_HEADER)) == 0;
 	char* body = out;
 	if (ours) {
@@ -414,7 +414,7 @@ static bool banana_off(char* msg, size_t msgSize) {
 		fprintf(stderr, "banana: removed %s (back to BananaOS's own list)\n", BANANA_USER);
 	} else {
 		ok = write_file(BANANA_USER, body, 0644);
-		fprintf(stderr, "banana: Game Boy Advance list back to its emulator in %s\n", BANANA_USER);
+		fprintf(stderr, "banana: PlayStation list back to its emulator in %s\n", BANANA_USER);
 	}
 	free(def);
 	free(out);
@@ -433,9 +433,9 @@ bool banana_integration_set(bool on, char* msg, size_t msgSize) {
 }
 
 void banana_integration_refresh(void) {
-	/* GBA DS moved since it was switched on: point the line at its new
+	/* PSX-DS moved since it was switched on: point the line at its new
 	 * folder; or the line's from before v1.4.10, with no way back to the
-	 * list's emulator once GBA DS is gone: the line as it's written now */
+	 * list's emulator once PSX-DS is gone: the line as it's written now */
 	if (!banana_present() || !banana_integration_on()) return;
 	char dir[600], want[700];
 	if (!app_dir(dir, sizeof(dir))) return;
@@ -443,7 +443,7 @@ void banana_integration_refresh(void) {
 	char* t = read_file(BANANA_USER);
 	const char *ra, *rb;
 	/* (current: its folder, and no "run-retroarch" in it, which a test build's
-	 * line had: banana-ui gave GBA DS one panel then) */
+	 * line had: banana-ui gave PSX-DS one panel then) */
 	bool current = t && gba_run_line(t, &ra, &rb) && strstr(t, want) && strstr(t, want) < rb &&
 	               !memmem(ra, (size_t) (rb - ra), "run-retroarch", 13);
 	free(t);

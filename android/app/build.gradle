@@ -2,7 +2,7 @@
 // libmgba with the NDK and passes their paths as Gradle properties:
 //   -PsdlDir=...  -PmgbaSrc=...  -PmgbaBuild=...
 // Release signing (optional; debug-signed otherwise) from the environment:
-//   GBADS_KEYSTORE, GBADS_KEYSTORE_PASSWORD, GBADS_KEY_ALIAS, GBADS_KEY_PASSWORD
+//   PSXDS_KEYSTORE, PSXDS_KEYSTORE_PASSWORD, PSXDS_KEY_ALIAS, PSXDS_KEY_PASSWORD
 plugins {
     id "com.android.application"
 }
@@ -17,10 +17,10 @@ def mgbaBuild = need("mgbaBuild")
 def cpuFlags = project.hasProperty("cpuFlags") ? project.property("cpuFlags") : ""
 def appVersion = rootProject.file("../VERSION").text.trim()
 def runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1") as int
-def keystore = System.getenv("GBADS_KEYSTORE")
+def keystore = System.getenv("PSXDS_KEYSTORE")
 
 android {
-    namespace "io.github.kyannon.gbads"
+    namespace "io.github.gin649.psxds"
     compileSdk 34
     packaging {
         jniLibs {
@@ -51,10 +51,10 @@ android {
         externalNativeBuild {
             cmake {
                 arguments "-DANDROID_STL=c++_static",
-                        "-DGBADS_SDL_SRC=${sdlDir}",
-                        "-DGBADS_MGBA_SRC=${mgbaSrc}",
-                        "-DGBADS_MGBA_BUILD=${mgbaBuild}",
-                        "-DGBADS_VERSION=${appVersion}"
+                        "-DPSXDS_SDL_SRC=${sdlDir}",
+                        "-DPSXDS_MGBA_SRC=${mgbaSrc}",
+                        "-DPSXDS_MGBA_BUILD=${mgbaBuild}",
+                        "-DPSXDS_VERSION=${appVersion}"
             }
         }
     }
@@ -63,9 +63,9 @@ android {
         if (keystore) {
             release {
                 storeFile file(keystore)
-                storePassword System.getenv("GBADS_KEYSTORE_PASSWORD")
-                keyAlias System.getenv("GBADS_KEY_ALIAS")
-                keyPassword System.getenv("GBADS_KEY_PASSWORD")
+                storePassword System.getenv("PSXDS_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("PSXDS_KEY_ALIAS")
+                keyPassword System.getenv("PSXDS_KEY_PASSWORD")
             }
         }
     }
