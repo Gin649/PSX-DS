@@ -184,6 +184,22 @@ int main(int argc, char** argv) {
 		emu_set_option("swanstation_Display_ShowOSDMessages", "false");
 #ifdef __ANDROID__
 		android_core_setup(); /* the APK's two copies of the core */
+#else
+		/* the zip's two copies (cores/ beside the program, or PSXDS_CORE_DIR:
+		 * launch.sh's copy in memory); PSXDS_CORE (one library, copied as
+		 * needed) is for development */
+		if (!getenv("PSXDS_CORE")) {
+			const char* cd = getenv("PSXDS_CORE_DIR");
+			static char a[1100], b[1100];
+			snprintf(a, sizeof(a), "%s/libswan_a.so", cd && *cd ? cd : exeDir);
+			snprintf(b, sizeof(b), "%s/libswan_b.so", cd && *cd ? cd : exeDir);
+			if (!(cd && *cd)) {
+				snprintf(a, sizeof(a), "%s/cores/libswan_a.so", exeDir);
+				snprintf(b, sizeof(b), "%s/cores/libswan_b.so", exeDir);
+			}
+			const char* paths[2] = { a, b };
+			emu_set_core_paths(paths, 2);
+		}
 #endif
 	}
 	if (cfg.overlayMode == OVM_LEGACY) {

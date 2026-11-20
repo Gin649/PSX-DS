@@ -74,6 +74,8 @@ if ! ./psx-ds --version >/dev/null 2>&1; then
 		if [ -d "$t" ] && cp ./psx-ds "$t/psx-ds.bin" 2>/dev/null && chmod +x "$t/psx-ds.bin" && "$t/psx-ds.bin" --version >/dev/null 2>&1; then
 			PSXDS="$t/psx-ds.bin"
 			export PSXDS_HOME="$DIR"
+			# the PlayStation core's two copies can't load from here either
+			mkdir -p "$t/psx-ds-cores" && cp ./cores/libswan_*.so "$t/psx-ds-cores/" 2>/dev/null && export PSXDS_CORE_DIR="$t/psx-ds-cores"
 			break
 		fi
 		rm -f "$t/psx-ds.bin" 2>/dev/null

@@ -1,17 +1,14 @@
 # PSX-DS build
 #
-#   scripts/setup-host.sh     first time: fetches and builds mGBA and SDL2 into deps/, then builds
+#   scripts/setup-host.sh     first time: fetches and builds SwanStation and SDL2 into deps/, then builds
 #   make / make tools         host build (build/host/psx-ds, build/host/harness)
-#   make CROSS=aarch64-linux-gnu- MGBA_BUILD=../mgba/build-aarch64 SDL_PREFIX=../sdl-aarch64
+#   make CROSS=aarch64-linux-gnu- SDL_PREFIX=../sdl-aarch64
 #
-# MGBA_SRC   mGBA source tree (headers)
-# MGBA_BUILD a cmake build dir of mGBA (see scripts/build-rocknix.sh for the options), targets mgba and zlibstatic built
+# ZLIB       how to link zlib (default -lz; ZLIB_INC its include flags)
 # SDL_PREFIX an SDL2 install prefix (include/SDL2, lib/libSDL2.so)
 
 CROSS      ?=
 CC         := $(CROSS)gcc
-MGBA_SRC   ?= deps/mgba
-MGBA_BUILD ?= $(MGBA_SRC)/build-host
 SDL_PREFIX ?= deps/sdl-host
 OUT        ?= build/$(if $(CROSS),$(patsubst %-,%,$(CROSS)),host)
 
@@ -33,10 +30,11 @@ endif
 OPTFLAGS   ?= -O2 -g
 
 override CFLAGS := $(OPTFLAGS) -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers \
-              -DPSXDS_VERSION='"$(VERSION)"' $(SIDE_DEF) -I$(SDL_PREFIX)/include/SDL2 -D_REENTRANT
+              -DPSXDS_VERSION='"$(VERSION)"' $(SIDE_DEF) -I$(SDL_PREFIX)/include/SDL2 $(ZLIB_INC) -D_REENTRANT
 LDFLAGS    += -L$(SDL_PREFIX)/lib -Wl,-rpath-link,$(SDL_PREFIX)/lib
 # the PlayStation core (SwanStation) is loaded at run time (emu.c), not linked
-LIBS       := -lSDL2 -lz -ldl -lpthread -lm
+ZLIB       ?= -lz
+LIBS       := -lSDL2 $(ZLIB) -ldl -lpthread -lm
 
 CORE_SRC   := src/emu.c src/patch.c src/mapcap.c src/profiles.c src/logo_masks.c
 # RetroAchievements: rcheevos (MIT), vendored in third_party/rcheevos
@@ -69,7 +67,7 @@ tools: $(OUT)/harness
 
 $(OUT)/harness: tools/harness.c tools/png.c $(CORE_SRC) src/logo.c src/*.h
 	@mkdir -p $(OUT)
-	$(CC) $(CFLAGS) -o $@ tools/harness.c tools/png.c $(CORE_SRC) src/logo.c $(MGBA_BUILD)/libmgba.a $(ZLIB_A) -lpng -lpthread -lm
+	$(CC) $(CFLAGS) -o $@ tools/harness.c tools/png.c $(CORE_SRC) src/logo.c $(ZLIB) -lpng -ldl -lpthread -lm
 
 clean:
 	rm -rf build

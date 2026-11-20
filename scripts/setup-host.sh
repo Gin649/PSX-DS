@@ -16,15 +16,11 @@ cd "$(dirname "$0")/.."
 ROOT="$PWD"
 DEPS="$ROOT/deps"
 mkdir -p "$DEPS"
-. scripts/mgba-options.sh
-
-if [ ! -d "$DEPS/mgba" ]; then
-	git clone https://github.com/mgba-emu/mgba.git "$DEPS/mgba"
-	git -C "$DEPS/mgba" checkout "$MGBA_COMMIT"
-fi
-cmake -S "$DEPS/mgba" -B "$DEPS/mgba/build-host" "${MGBA_OPTS[@]}"
-make -C "$DEPS/mgba/build-host" -j"$(nproc)" mgba zlibstatic
-
+. scripts/deps.sh
+# the PlayStation core (run with PSXDS_CORE=deps/swanstation/build-host/swanstation_libretro.so)
+fetch_swanstation "$DEPS"
+cmake -S "$DEPS/swanstation" -B "$DEPS/swanstation/build-host" -DCMAKE_BUILD_TYPE=Release
+make -C "$DEPS/swanstation/build-host" -j"$(nproc)" swanstation_libretro
 if [ ! -f "$DEPS/sdl-host/lib/libSDL2.so" ]; then
 	[ -d "$DEPS/SDL2" ] || git clone --depth 1 -b "$SDL_BRANCH" https://github.com/libsdl-org/SDL.git "$DEPS/SDL2"
 	cmake -S "$DEPS/SDL2" -B "$DEPS/SDL2/build-host" -DCMAKE_BUILD_TYPE=Release \

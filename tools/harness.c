@@ -22,8 +22,6 @@
 #include "../src/profiles.h"
 #include "../src/logo.h"
 
-#include <mgba/flags.h>
-#include <mgba/core/core.h>
 
 #include <ctype.h>
 #include <stdio.h>
@@ -176,7 +174,7 @@ int main(int argc, char** argv) {
 		} else if (!strcmp(cmd, "poke")) {
 			uint32_t addr = strtoul(a1, NULL, 0), len = strtoul(a2, NULL, 0), val = strtoul(a3, NULL, 0);
 			/* (little-endian: len bytes of val) */
-			for (uint32_t i = 0; i < len; ++i) emu.core->rawWrite8(emu.core, addr + i, -1, i < 4 ? (val >> (8 * i)) & 0xFF : 0);
+			for (uint32_t i = 0; i < len; ++i) emu_write8(&emu, addr + i, i < 4 ? (val >> (8 * i)) & 0xFF : 0);
 		} else if (!strcmp(cmd, "logo")) {
 			char path[512];
 			snprintf(path, sizeof(path), "%s/%s.png", outdir, a1);
@@ -192,12 +190,12 @@ int main(int argc, char** argv) {
 			static uint32_t a[SCREEN_W * SCREEN_H], b[SCREEN_W * SCREEN_H];
 			/* b = backdrop only (all layers off) */
 			emu_state_load(&emu, st);
-			for (int i = 0; i < 5; ++i) emu.core->enableVideoLayer(emu.core, i, false);
+			/* (no layers on the PS1) */
 			emu_frame(&emu, 0);
 			memcpy(b, emu.fb, sizeof(b));
 			for (int L = -1; L < 5; ++L) {
 				emu_state_load(&emu, st);
-				for (int i = 0; i < 5; ++i) emu.core->enableVideoLayer(emu.core, i, L < 0 || i == L);
+				(void)L;
 				emu_frame(&emu, 0);
 				memcpy(a, emu.fb, sizeof(a));
 				if (L >= 0) {
@@ -210,7 +208,7 @@ int main(int argc, char** argv) {
 				else snprintf(path, sizeof(path), "%s/%s_L%d.png", outdir, a1, L);
 				write_png(path, a, SCREEN_W, SCREEN_H, SCREEN_W);
 			}
-			for (int i = 0; i < 5; ++i) emu.core->enableVideoLayer(emu.core, i, true);
+			/* (no layers on the PS1) */
 			emu_state_load(&emu, st);
 			free(st);
 		} else if (!strcmp(cmd, "dumpram")) {

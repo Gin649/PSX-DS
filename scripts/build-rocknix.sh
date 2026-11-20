@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 ROOT="$PWD"
 DEPS="$ROOT/deps"
 mkdir -p "$DEPS"
-. scripts/mgba-options.sh   # MGBA_OPTS, MGBA_COMMIT, SDL_BRANCH; shared with setup-host.sh
+. scripts/deps.sh   # SDL_BRANCH, SWAN_COMMIT, fetch_swanstation; shared with the other builds
 
 
 # --- toolchain -------------------------------------------------------------
@@ -32,17 +32,19 @@ if [ -z "${AARCH64_TOOLCHAIN_BIN:-}" ]; then
 fi
 CROSS="$AARCH64_TOOLCHAIN_BIN/aarch64-linux-gnu-"
 
-# --- libmgba ---------------------------------------------------------------
-if [ ! -d "$DEPS/mgba" ]; then
-	git clone https://github.com/mgba-emu/mgba.git "$DEPS/mgba"
-	git -C "$DEPS/mgba" checkout "$MGBA_COMMIT"
+# --- SwanStation (the PlayStation core, a libretro library loaded at run time) ---
+fetch_swanstation "$DEPS"
+cmake -S "$DEPS/swanstation" -B "$DEPS/swanstation/build-aarch64" -DCMAKE_TOOLCHAIN_FILE="$ROOT/cmake/aarch64.cmake" \
+	-DCMAKE_SHARED_LINKER_FLAGS="-static-libstdc++ -static-libgcc" \
+	-DCMAKE_BUILD_TYPE=Release
+make -C "$DEPS/swanstation/build-aarch64" -j"$(nproc)" swanstation_libretro
+
+# --- zlib (static: the devices' systems don't all have it) ---
+if [ ! -d "$DEPS/zlib" ]; then
+	git clone --depth 1 -b v1.3.1 https://github.com/madler/zlib.git "$DEPS/zlib"
 fi
-# a build dir configured the old way (LIBMGBA_ONLY) is started over
-if grep -q "^LIBMGBA_ONLY:UNINITIALIZED=ON" "$DEPS/mgba/build-aarch64/CMakeCache.txt" 2>/dev/null; then
-	rm -rf "$DEPS/mgba/build-aarch64"
-fi
-cmake -S "$DEPS/mgba" -B "$DEPS/mgba/build-aarch64" -DCMAKE_TOOLCHAIN_FILE="$ROOT/cmake/aarch64.cmake" "${MGBA_OPTS[@]}"
-make -C "$DEPS/mgba/build-aarch64" -j"$(nproc)" mgba zlibstatic
+cmake -S "$DEPS/zlib" -B "$DEPS/zlib/build-aarch64" -DCMAKE_TOOLCHAIN_FILE="$ROOT/cmake/aarch64.cmake" -DCMAKE_BUILD_TYPE=Release
+make -C "$DEPS/zlib/build-aarch64" -j"$(nproc)" zlibstatic
 
 # --- SDL2 (only to link against; the device's own libSDL2 is used at runtime) ---
 if [ ! -d "$DEPS/SDL2" ]; then
@@ -79,7 +81,7 @@ if [ -n "$SIDE" ]; then
 fi
 
 # --- psx-ds ---------------------------------------------------------------
-make CROSS="$CROSS" MGBA_SRC="$DEPS/mgba" MGBA_BUILD="$DEPS/mgba/build-aarch64" \
+make CROSS="$CROSS" ZLIB="$DEPS/zlib/build-aarch64/libz.a" ZLIB_INC="-I$DEPS/zlib -I$DEPS/zlib/build-aarch64" \
 	SDL_PREFIX="$DEPS/sdl-aarch64" OUT=build/aarch64${SIDE:+-$SIDE} OPTFLAGS="-O2 -mcpu=cortex-a55" SIDE="$SIDE" SIDE_CODES="$SIDE_CODES"
 
 # --- package ---------------------------------------------------------------
@@ -104,12 +106,17 @@ cp README.md "$PKG/README.md"
 # mGBA is statically linked (MPL-2.0): ship its licence and where to get its source
 mkdir -p "$PKG/licenses"
 cp LICENSE "$PKG/licenses/PSX-DS-LICENSE.txt"
-cp "$DEPS/mgba/LICENSE" "$PKG/licenses/mGBA-LICENSE.txt"
+cp "$DEPS/swanstation/LICENSE" "$PKG/licenses/SwanStation-LICENSE.txt"
 cp assets/fonts/Jost-OFL.txt "$PKG/licenses/Jost-OFL.txt"
 cp third_party/rcheevos/LICENSE "$PKG/licenses/rcheevos-LICENSE.txt"
 cp third_party/libwebp/COPYING "$PKG/licenses/libwebp-COPYING.txt"
 cp third_party/libwebp/PATENTS "$PKG/licenses/libwebp-PATENTS.txt"
-printf "PSX-DS %s is free software under the GNU General Public License, version 3 only (PSX-DS-LICENSE.txt).\nIt statically links libmgba (c) Jeffrey Pfau, MPL-2.0.\nmGBA source: https://github.com/mgba-emu/mgba (commit %s)\nIts text is set in Jost (c) The Jost Project Authors, SIL Open Font License 1.1 (Jost-OFL.txt).\nRetroAchievements support: rcheevos (c) RetroAchievements, MIT (rcheevos-LICENSE.txt), %s.\nWebP images: libwebp (c) Google Inc., BSD 3-clause (libwebp-COPYING.txt, libwebp-PATENTS.txt), v1.6.0.\nPSX-DS source: https://github.com/Gin649/PSX-DS\n" "$VERSION" "$MGBA_COMMIT" "$(tail -1 third_party/rcheevos/VERSION)" > "$PKG/licenses/README.txt"
+printf "PSX-DS %s is free software under the GNU General Public License, version 3 only (PSX-DS-LICENSE.txt).\nIt is a modified version of GBA DS (c) kyannon: https://github.com/kyannon/gba-ds\nPlayStation emulation: SwanStation (c) its authors, GPL-3.0 (SwanStation-LICENSE.txt): https://github.com/libretro/swanstation (commit %s)\nzlib (c) Jean-loup Gailly and Mark Adler, zlib licence.\nIts text is set in Jost (c) The Jost Project Authors, SIL Open Font License 1.1 (Jost-OFL.txt).\nRetroAchievements support: rcheevos (c) RetroAchievements, MIT (rcheevos-LICENSE.txt), %s.\nWebP images: libwebp (c) Google Inc., BSD 3-clause (libwebp-COPYING.txt, libwebp-PATENTS.txt), v1.6.0.\nPSX-DS source: https://github.com/Gin649/PSX-DS\n" "$VERSION" "$SWAN_COMMIT" "$(tail -1 third_party/rcheevos/VERSION)" > "$PKG/licenses/README.txt"
+# two copies of the core: the game and the hidden copy each load their own (emu.c)
+mkdir -p "$PKG/cores"
+for c in a b; do
+	"${CROSS}strip" --strip-unneeded -o "$PKG/cores/libswan_$c.so" "$DEPS/swanstation/build-aarch64/swanstation_libretro.so"
+done
 sed "s#/psx-ds/#/$APP/#g; s#psx-ds-error.log#$APP-error.log#" "dist/PSX-DS.sh" > "$ROOT/build/pkg/$ENTRY.sh"
 # EmulationStation artwork for the Ports entry
 mkdir -p "$ROOT/build/pkg/images"
@@ -118,33 +125,6 @@ cp assets/brand/psx-ds-icon.png "$ROOT/build/pkg/images/$ENTRY.png"
 # Store: its catalog entry's "menu" > "media" > "image" names images/icon.png)
 mkdir -p "$PKG/images"
 cp assets/brand/psx-ds-icon-transparent.png "$PKG/images/icon.png"
-# Dev builds carry the web build for State Saver's PSX-DS tab (drop the zip
-# there to run this build in a browser). PSXDS_WEB_WORK: build-web.sh's WORKDIR.
-if [[ $VERSION == *-dev ]]; then
-	if "$ROOT/scripts/build-web.sh" ${PSXDS_WEB_WORK:+"$PSXDS_WEB_WORK"} > "$ROOT/build/web.log" 2>&1; then
-		mkdir -p "$PKG/web"
-		cp "$ROOT/build/web/psx-ds.wasm" "$PKG/web/"
-		echo "$VERSION" > "$PKG/web/VERSION"
-	else
-		echo "web build failed (build/web.log): the zip has no web/psx-ds.wasm"
-	fi
-fi
-# The final dev build before a release carries test save states for the new
-# games (tools/make_device_states.py makes the folder): PSXDS_DEVICE_STATES=DIR
-# copies its files into states/ (dev versions only; CLAUDE.md, "Final dev build").
-if [ -n "${PSXDS_DEVICE_STATES:-}" ]; then
-	if [[ $VERSION != *-dev ]]; then
-		echo "PSXDS_DEVICE_STATES: test states go only into -dev builds (VERSION is $VERSION)" >&2
-		exit 1
-	fi
-	if ! ls "$PSXDS_DEVICE_STATES"/*.state > /dev/null 2>&1; then
-		echo "PSXDS_DEVICE_STATES: no .state files in $PSXDS_DEVICE_STATES (run tools/make_device_states.py)" >&2
-		exit 1
-	fi
-	mkdir -p "$PKG/states"
-	cp "$PSXDS_DEVICE_STATES"/*.state "$PSXDS_DEVICE_STATES"/TEST-STATES.txt "$PKG/states/"
-	echo "test states: $(ls "$PKG/states"/*.state | wc -l) in states/"
-fi
 chmod +x "$PKG"/*.sh "$PKG/psx-ds" "$ROOT/build/pkg/$ENTRY.sh"
 if [ -n "$SIDE" ]; then
 	rm -f "$ROOT"/dist/psx-ds-*-"$SIDE"-linux-aarch64.zip
