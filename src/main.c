@@ -170,7 +170,22 @@ int main(int argc, char** argv) {
 	snprintf(path, sizeof(path), "%s/hotkeys.cfg", cfg.stateDir);
 	config_load_file(&cfg, path);
 	config_parse_args(&cfg, argc, argv);
-	emu_solar_level = cfg.solarLevel; /* (the sun sensor's reading, Boktai) */
+	/* the PlayStation core: the BIOS folder (bios_dir, else the first ROM
+	 * folder), memory cards' folder, and fast memory LUT (the fastest of the
+	 * three on the AYN Thor, with two copies running) */
+	{
+		char bios[1024];
+		snprintf(bios, sizeof(bios), "%s", cfg.biosDir[0] ? cfg.biosDir : cfg.romDir);
+		char* colon = strchr(bios, ':');
+		if (colon) *colon = 0;
+		emu_set_dirs(bios, cfg.stateDir);
+		emu_set_option("swanstation_CPU_FastmemMode", "LUT");
+		emu_set_option("swanstation_GPU_Renderer", "Software");
+		emu_set_option("swanstation_Display_ShowOSDMessages", "false");
+#ifdef __ANDROID__
+		android_core_setup(); /* the APK's two copies of the core */
+#endif
+	}
 	if (cfg.overlayMode == OVM_LEGACY) {
 		/* overlays = top / both... from before v1.5 (the player's PNGs, which
 		 * had no bezel to fall back on): Custom if overlays/ has any, else

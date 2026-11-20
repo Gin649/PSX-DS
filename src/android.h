@@ -16,6 +16,9 @@
 /* stderr (where all of PSX-DS's logging goes) to logcat (tag PSXDS) and to
  * <PSXDS_HOME>/psx-ds.log. Call first thing in main. */
 void android_init_log(void);
+/* Points emu.c at the core library copies in the APK (libswan_a.so,
+ * libswan_b.so in the app's nativeLibraryDir). */
+void android_core_setup(void);
 /* The folder Java gave us for config, states, logos (PSXDS_HOME), or NULL. */
 const char* android_home(void);
 /* PSX-DS's folder (issue #34): "PSX-DS" on the internal storage, or the one

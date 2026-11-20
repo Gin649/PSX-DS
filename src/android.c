@@ -113,7 +113,7 @@ void android_data_setup(void) {
 
 void android_config_defaults(Config* c) {
 	/* shared storage ignores case: this is also a folder called PS1 */
-	snprintf(c->romDir, sizeof(c->romDir), "/storage/emulated/0/ROMs/gba");
+	snprintf(c->romDir, sizeof(c->romDir), "/storage/emulated/0/ROMs/psx");
 	/* PSXDS_HOME is "PSX-DS" on the internal storage (or, without All files
 	 * access, the app's folder), laid out like the ROCKNIX install folder:
 	 * states/ (the default state_dir), logos/ and overlays/ (asset_dir),
@@ -128,8 +128,8 @@ void android_config_defaults(Config* c) {
 			const char* text;
 		} folders[] = {
 			{ "cheats", "Put RetroArch cheat files (.cht) here, subfolders are fine.\n"
-			            "A file goes with the ROM of the same name: Metroid Fusion (World) (Code Breaker).cht\n"
-			            "with Metroid Fusion (USA).gba. Switch cheats on in the pause menu: Extras > Cheats.\n"
+			            "A file goes with the game of the same name: Symphony of the Night (USA).cht\n"
+			            "with Symphony of the Night (USA).cue. Switch cheats on in the pause menu: Extras > Cheats.\n"
 			            "More in the wiki: https://github.com/Gin649/PSX-DS/wiki/Playing#cheats\n" },
 			{ "overlays", "Your own overlay PNGs go in this folder. Make each one the screen's size, transparent where\n"
 			              "the picture shows.\n\n"
@@ -891,3 +891,41 @@ JNIEXPORT void JNICALL Java_io_github_gin649_psxds_SecondScreen_nativeTouch(JNIE
 }
 
 #endif
+
+/* The APK's SwanStation copies, one for the game and one for the hidden copy
+ * (each with its own soname: scripts/build-android.sh) */
+void android_core_setup(void) {
+	JNIEnv* env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jobject activity = (jobject) SDL_AndroidGetActivity();
+	if (!env || !activity) return;
+	char dir[1024] = "";
+	jclass ctx = (*env)->GetObjectClass(env, activity);
+	jmethodID getInfo = (*env)->GetMethodID(env, ctx, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;");
+	jobject info = getInfo ? (*env)->CallObjectMethod(env, activity, getInfo) : NULL;
+	if (info) {
+		jclass infoCls = (*env)->GetObjectClass(env, info);
+		jfieldID f = (*env)->GetFieldID(env, infoCls, "nativeLibraryDir", "Ljava/lang/String;");
+		jstring js = f ? (jstring) (*env)->GetObjectField(env, info, f) : NULL;
+		if (js) {
+			const char* c = (*env)->GetStringUTFChars(env, js, NULL);
+			snprintf(dir, sizeof(dir), "%s", c);
+			(*env)->ReleaseStringUTFChars(env, js, c);
+			(*env)->DeleteLocalRef(env, js);
+		}
+		(*env)->DeleteLocalRef(env, infoCls);
+		(*env)->DeleteLocalRef(env, info);
+	}
+	if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+	(*env)->DeleteLocalRef(env, ctx);
+	(*env)->DeleteLocalRef(env, activity);
+	if (!dir[0]) {
+		fprintf(stderr, "core: no nativeLibraryDir\n");
+		return;
+	}
+	static char a[1100], b[1100];
+	snprintf(a, sizeof(a), "%s/libswan_a.so", dir);
+	snprintf(b, sizeof(b), "%s/libswan_b.so", dir);
+	const char* paths[2] = { a, b };
+	emu_set_core_paths(paths, 2);
+	fprintf(stderr, "core: %s, %s\n", a, b);
+}

@@ -15,38 +15,30 @@
  * game then work (they don't with a content link, %ROMPROVIDER%) */
 #define CMD_LINE "        " CMD_OPEN "%EMULATOR_PSX-DS% %ACTIVITY_CLEAR_TASK% %ACTIVITY_CLEAR_TOP% %EXTRA_rom%=%ROM%</command>\n"
 
-#define COPY_MARK "psx-ds: ES-DE's own gba entry"
+#define COPY_MARK "psx-ds: ES-DE's own psx entry"
 #define COPY_NOTE                                                                                              \
 	"        <!-- " COPY_MARK ", copied by PSX-DS (Settings > PSX-DS in ES-DE) with PSX-DS put first.\n" \
 	"             PSX-DS brings it up to date when it starts, and takes it out when that's switched off. -->\n"
 
-/* ES-DE's own gba system for Android (resources/systems/android/es_systems.xml,
+/* ES-DE's own psx system for Android (resources/systems/android/es_systems.xml,
  * ES-DE 3.4, Sep 2026). With RetroArch in SAF mode its RetroArch lines end
  * in %ROMSAF% instead (es_systems_saf.xml: the only difference). */
-static const char* const GBA_BODY =
-	"        <fullname>Nintendo PlayStation</fullname>\n"
-	"        <path>%ROMPATH%/gba</path>\n"
-	"        <extension>.agb .AGB .bin .BIN .cgb .CGB .dmg .DMG .gb .GB .gba .PS1 .gbc .GBC .gbx .GBX .sgb .SGB .7z .7Z .zip .ZIP</extension>\n"
+static const char* const PSX_BODY =
+	"        <fullname>Sony PlayStation</fullname>\n"
+	"        <path>%ROMPATH%/psx</path>\n"
+	"        <extension>.bin .BIN .cbn .CBN .ccd .CCD .chd .CHD .cue .CUE .ecm .ECM .exe .EXE .img .IMG .iso .ISO .m3u .M3U .mdf .MDF .mds .MDS .minipsf .MINIPSF .pbp .PBP .psexe .PSEXE .psf .PSF .toc .TOC .z .Z .znx .ZNX .7z .7Z .zip .ZIP</extension>\n"
 	CMD_LINE
 #define RA(label, core) \
 	"        <command label=\"" label "\">%EMULATOR_RETROARCH% %EXTRA_CONFIGFILE%=%EXTERNALDATA%/Android/data/%ANDROIDPACKAGE%/files/retroarch.cfg " \
 	"%EXTRA_LIBRETRO%=%INTERNALDATA%/%ANDROIDPACKAGE%/cores/" core "_libretro_android.so %EXTRA_ROM%=%ROM%</command>\n"
-	RA("SwanStation", "mgba")
-	RA("VBA-M", "vbam")
-	RA("VBA Next", "vba_next")
-	RA("gpSP", "gpsp")
-	RA("NooDS", "noods")
-	"        <command label=\"NooDS (Standalone)\">%EMULATOR_NOODS% %ACTIVITY_CLEAR_TASK% %ACTIVITY_CLEAR_TOP% %EXTRA_LaunchPath%=%ROM%</command>\n"
-	RA("SkyEmu", "skyemu")
-	"        <command label=\"SkyEmu (Standalone)\">%EMULATOR_SKYEMU% %ACTIVITY_CLEAR_TASK% %ACTIVITY_CLEAR_TOP% %ACTION%=android.intent.action.VIEW %DATA%=%ROMPROVIDER%</command>\n"
-	RA("MesenCE", "mesen2")
-	"        <command label=\"PS1.emu (Standalone)\">%EMULATOR_GBA-EMU% %DATA%=%ROMPROVIDER%</command>\n"
-	"        <command label=\"My Boy! (Standalone)\">%EMULATOR_MY-BOY% %ACTION%=android.intent.action.VIEW %DATA%=%ROMSAF%</command>\n"
-	"        <command label=\"Linkboy (Standalone)\">%EMULATOR_LINKBOY% %ACTION%=android.intent.action.VIEW %DATA%=%ROMSAF%</command>\n"
-	"        <command label=\"Pizza Boy PS1 (Standalone)\">%EMULATOR_PIZZA-BOY-PS1% %ACTIVITY_CLEAR_TASK% %ACTIVITY_CLEAR_TOP% %EXTRA_rom_uri%=%ROMSAF%</command>\n"
+	RA("SwanStation", "swanstation")
+	RA("Beetle PSX", "mednafen_psx")
+	RA("PCSX ReARMed", "pcsx_rearmed")
+	RA("Beetle PSX HW", "mednafen_psx_hw")
+	"        <command label=\"DuckStation (Standalone)\">%EMULATOR_DUCKSTATION% %ACTIVITY_CLEAR_TASK% %ACTIVITY_CLEAR_TOP% %EXTRA_bootPath%=%ROMSAF%</command>\n"
 #undef RA
-	"        <platform>gba</platform>\n"
-	"        <theme>gba</theme>\n";
+	"        <platform>psx</platform>\n"
+	"        <theme>psx</theme>\n";
 
 #define RULE_OPEN "<emulator name=\"PSX-DS\">"
 static const char* const RULE =
@@ -78,13 +70,13 @@ static void puts_(Buf* b, const char* s) {
 	put(b, s, strlen(s));
 }
 
-/* The gba system, its RetroArch lines in SAF mode if asked (one string) */
+/* The psx system, its RetroArch lines in SAF mode if asked (one string) */
 static char* gba_system(bool saf) {
 	Buf b = { 0 };
 	puts_(&b, "    <system>\n");
 	puts_(&b, COPY_NOTE);
-	puts_(&b, "        <name>gba</name>\n");
-	const char* p = GBA_BODY;
+	puts_(&b, "        <name>psx</name>\n");
+	const char* p = PSX_BODY;
 	const char* ra = "%EXTRA_ROM%=%ROM%</command>";
 	for (const char* q; saf && (q = strstr(p, ra)); p = q + strlen(ra)) {
 		put(&b, p, (size_t) (q - p));
@@ -195,13 +187,13 @@ char* esde_systems_add(const char* xml, bool saf) {
 	char* m = masked(xml);
 	char* out = NULL;
 	size_t from, to;
-	if (find_elem(m, "<system", "</system>", NULL, "gba", &from, &to)) {
+	if (find_elem(m, "<system", "</system>", NULL, "psx", &from, &to)) {
 		/* (the marker is in a comment: looked for in the text itself) */
 		const char* mark = strstr(xml + from, COPY_MARK);
 		if (mark && (size_t) (mark - xml) < to) {
 			out = splice(xml, from, to, sys); /* PSX-DS's copy: brought up to date */
 		} else {
-			/* the player's own gba entry: PSX-DS's line first among its emulators */
+			/* the player's own psx entry: PSX-DS's line first among its emulators */
 			const char* own = strstr(m + from, CMD_OPEN);
 			if (own && (size_t) (own - m) < to) {
 				size_t a = line_start(m, (size_t) (own - m));
@@ -239,7 +231,7 @@ char* esde_systems_remove(const char* xml) {
 	char* m = masked(xml);
 	char* out = NULL;
 	size_t from, to;
-	if (find_elem(m, "<system", "</system>", NULL, "gba", &from, &to)) {
+	if (find_elem(m, "<system", "</system>", NULL, "psx", &from, &to)) {
 		const char* mark = strstr(xml + from, COPY_MARK);
 		if (mark && (size_t) (mark - xml) < to) {
 			out = splice(xml, from, to, "");
@@ -411,7 +403,7 @@ bool esde_integration_on(void) {
 	char* m = masked(s);
 	size_t from, to;
 	bool on = false;
-	if (find_elem(m, "<system", "</system>", NULL, "gba", &from, &to)) {
+	if (find_elem(m, "<system", "</system>", NULL, "psx", &from, &to)) {
 		const char* c = strstr(m + from, CMD_OPEN);
 		on = c && (size_t) (c - m) < to;
 	}

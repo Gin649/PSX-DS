@@ -77,7 +77,7 @@ static bool find_gba_system(const char* xml, const char** start, const char** en
 		const char* name = between(p, e, "<name>", "</name>", &n);
 		while (name && n && (*name == ' ' || *name == '\t' || *name == '\n' || *name == '\r')) ++name, --n;
 		while (name && n && (name[n - 1] == ' ' || name[n - 1] == '\t' || name[n - 1] == '\n' || name[n - 1] == '\r')) --n;
-		if (name && n == 3 && !strncmp(name, "gba", 3)) {
+		if (name && n == 3 && !strncmp(name, "psx", 3)) {
 			*start = p;
 			*end = e;
 			return true;

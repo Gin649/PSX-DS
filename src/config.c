@@ -198,6 +198,7 @@ static bool set_option(Config* c, const char* key, const char* val) {
 	STR("retroarch_state_dir", raStateDir)
 	STR("retroarch_cfg", raCfg)
 	STR("rom_dir", romDir)
+	STR("bios_dir", biosDir)
 	STR("cheat_dir", cheatDir)
 	STR("patch_dir", patchDir)
 	STR("screenshot_dir", screenshotDir)

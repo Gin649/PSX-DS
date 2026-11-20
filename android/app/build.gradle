@@ -1,6 +1,6 @@
-// Built by scripts/build-android.sh, which fetches SDL2 and mGBA, builds
-// libmgba with the NDK and passes their paths as Gradle properties:
-//   -PsdlDir=...  -PmgbaSrc=...  -PmgbaBuild=...
+// Built by scripts/build-android.sh, which fetches SDL2 and builds
+// SwanStation (packed as jniLibs), and passes SDL2's path as a Gradle property:
+//   -PsdlDir=...
 // Release signing (optional; debug-signed otherwise) from the environment:
 //   PSXDS_KEYSTORE, PSXDS_KEYSTORE_PASSWORD, PSXDS_KEY_ALIAS, PSXDS_KEY_PASSWORD
 plugins {
@@ -12,8 +12,6 @@ def need = { String name ->
     return file(project.property(name)).absolutePath
 }
 def sdlDir = need("sdlDir")
-def mgbaSrc = need("mgbaSrc")
-def mgbaBuild = need("mgbaBuild")
 def cpuFlags = project.hasProperty("cpuFlags") ? project.property("cpuFlags") : ""
 def appVersion = rootProject.file("../VERSION").text.trim()
 def runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1") as int
@@ -52,8 +50,6 @@ android {
             cmake {
                 arguments "-DANDROID_STL=c++_static",
                         "-DPSXDS_SDL_SRC=${sdlDir}",
-                        "-DPSXDS_MGBA_SRC=${mgbaSrc}",
-                        "-DPSXDS_MGBA_BUILD=${mgbaBuild}",
                         "-DPSXDS_VERSION=${appVersion}"
             }
         }

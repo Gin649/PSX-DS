@@ -1,17 +1,16 @@
 # Native part of the Android app: libSDL2.so (built from source) and
 # libmain.so (PSX-DS itself, the same sources as the ROCKNIX build, plus
-# src/android.c). SwanStation is built beforehand by scripts/build-android.sh.
+# src/android.c). SwanStation isn't linked: scripts/build-android.sh packs
+# two copies of its libretro core in the APK, which emu.c loads at run time.
 #
 # Set by android/app/build.gradle from Gradle properties:
 #   PSXDS_SDL_SRC     SDL2 source tree (same branch as the ROCKNIX build)
-#   PSXDS_MGBA_SRC    SwanStation source tree (headers)
-#   PSXDS_MGBA_BUILD  SwanStation build dir for this ABI (SwanStation.a, zlib/libz.a)
 #   PSXDS_VERSION     version string
 cmake_minimum_required(VERSION 3.18)
 project(psxds C CXX)
 
 get_filename_component(PSXDS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../.." ABSOLUTE)
-foreach(v PSXDS_SDL_SRC PSXDS_MGBA_SRC PSXDS_MGBA_BUILD)
+foreach(v PSXDS_SDL_SRC)
 	if(NOT ${v})
 		message(FATAL_ERROR "${v} is not set (build with scripts/build-android.sh)")
 	endif()
@@ -22,20 +21,6 @@ set(SDL_SHARED ON CACHE BOOL "" FORCE)
 set(SDL_STATIC OFF CACHE BOOL "" FORCE)
 set(SDL_TEST OFF CACHE BOOL "" FORCE)
 add_subdirectory("${PSXDS_SDL_SRC}" SDL)
-
-# --- SwanStation (prebuilt, static) ---
-add_library(mgba STATIC IMPORTED)
-set_target_properties(mgba PROPERTIES IMPORTED_LOCATION "${PSXDS_MGBA_BUILD}/SwanStation.a")
-set(MGBA_LIBS mgba)
-if(EXISTS "${PSXDS_MGBA_BUILD}/zlib/libz.a")
-	add_library(mgba_zlib STATIC IMPORTED)
-	set_target_properties(mgba_zlib PROPERTIES IMPORTED_LOCATION "${PSXDS_MGBA_BUILD}/zlib/libz.a")
-	list(APPEND MGBA_LIBS mgba_zlib)
-endif()
-# the defines SwanStation was built with (its headers depend on them), as the Makefile does
-file(STRINGS "${PSXDS_MGBA_BUILD}/CMakeFiles/mgba.dir/flags.make" MGBA_DEFINES_LINE REGEX "^C_DEFINES = ")
-string(REGEX REPLACE "^C_DEFINES = " "" MGBA_DEFINES "${MGBA_DEFINES_LINE}")
-separate_arguments(MGBA_DEFINES)
 
 # --- rcheevos (RetroAchievements, MIT), vendored; the same files as the Makefile's RC_SRC ---
 set(RC "${PSXDS_ROOT}/third_party/rcheevos")
@@ -56,10 +41,10 @@ set(S "${PSXDS_ROOT}/src")
 add_library(main SHARED
 	${S}/main.c ${S}/config.c ${S}/font.c ${S}/ui.c ${S}/library.c ${S}/game.c ${S}/paths.c ${S}/image.c ${S}/mapper.c ${S}/hotkeys.c ${S}/folderpick.c
 	${S}/brand_data.c ${S}/bezel.c ${S}/bezel_logo.c ${S}/logo.c ${S}/cheats.c ${S}/esinteg.c ${S}/esde.c ${S}/textfont.c ${S}/fonts_data.c ${S}/i18n.c ${S}/i18n_data.c
-	${S}/emu.c ${S}/patch.c ${S}/mapcap.c ${S}/profiles.c ${S}/logo_masks.c ${S}/ra.c ${S}/update.c ${S}/http.c ${S}/sha256.c
+	${S}/emu.c ${S}/patch.c ${S}/mapcap.c ${S}/profiles.c ${S}/logo_masks.c ${S}/ra.c ${S}/update.c ${S}/http.c ${S}/sha256.c ${S}/unzip.c
 	${S}/android.c)
 set_target_properties(main PROPERTIES C_STANDARD 11 C_EXTENSIONS ON)
-target_compile_options(main PRIVATE ${MGBA_DEFINES} -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
+target_compile_options(main PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
 target_compile_definitions(main PRIVATE PSXDS_VERSION="${PSXDS_VERSION}" PSXDS_RA)
-target_include_directories(main PRIVATE "${PSXDS_MGBA_SRC}/include" "${PSXDS_MGBA_BUILD}/include" "${RC}/src")
-target_link_libraries(main PRIVATE SDL2::SDL2 ${MGBA_LIBS} rcheevos webpdec android log EGL m)
+target_include_directories(main PRIVATE "${RC}/src")
+target_link_libraries(main PRIVATE SDL2::SDL2 rcheevos webpdec android log EGL z dl m)

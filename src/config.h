@@ -78,6 +78,7 @@ typedef struct Config {
 	char raStateDir[512]; /* RetroArch's state folder when it isn't found from its settings (retroarch_state_dir) */
 	char raCfg[512];      /* RetroArch's retroarch.cfg (retroarch_cfg; default: looked for) */
 	char romDir[1024]; /* library folders, ':'-separated */
+	char biosDir[1024]; /* the PS1 BIOS files (scph5501.bin...); empty: the first ROM folder */
 	char screenshotDir[512]; /* "Take Screenshot" saves here */
 	char cheatDir[1024]; /* RetroArch .cht folders, ':'-separated (searched two levels deep) */
 	char patchDir[1024]; /* patches, a folder per game in it (GEN-9); default: <assetDir>/patches */
