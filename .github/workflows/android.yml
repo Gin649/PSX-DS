@@ -9,7 +9,7 @@ name: Android
 
 on:
   push:
-    branches: [psx, android, dev]
+    branches: [android, dev]  # (psx: back on once the Android port is done, step 3)
   workflow_dispatch:
 
 jobs:

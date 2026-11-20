@@ -1,6 +1,5 @@
 #include "profiles.h"
 
-#include <mgba/core/core.h>
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -11358,7 +11357,7 @@ bool profile_patch_rom(const MapProfile* p, Emu* e) {
 		for (const RomPatch* r = p->romPatch; r < p->romPatch + 3 && r->addr; ++r) {
 			for (int i = 0; i < r->len; ++i) {
 				if (pass == 0 && emu_read8(e, r->addr + i) != (r->orig ? r->orig[i] : 0xFF)) return false;
-				if (pass == 1) e->core->rawWrite8(e->core, r->addr + i, -1, r->bytes[i]);
+				if (pass == 1) emu_write8(e, r->addr + i, r->bytes[i]);
 			}
 		}
 	}
@@ -11389,7 +11388,7 @@ DumpKind profile_dump(const char* gameCode, uint32_t crc, const char** name) {
 	return listed ? DUMP_MODIFIED : DUMP_UNLISTED;
 }
 
-uint32_t doCrc32(const void* buf, size_t size); /* (libmgba's: its header wants zlib.h) */
+uint32_t doCrc32(const void* buf, size_t size); /* (emu.c) */
 const KnownPatch* profile_patch(const uint8_t* file, size_t size, int n) {
 	if (size <= 4) return NULL;
 	uint32_t id = doCrc32(file, size - 4);

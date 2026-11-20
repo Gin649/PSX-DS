@@ -1,1620 +1,792 @@
-/* mGBA's gba.h uses GBA_H as its include guard, which emu.h defines as the
- * screen height: include it first, then let emu.h take the name over. */
-#include <mgba/flags.h>
-#include <mgba/internal/gba/gba.h>
-#include <mgba/internal/gba/renderers/video-software.h>
-#include <mgba/internal/gba/cheats.h>
-#undef GBA_H
+/* The emulator wrapper: SwanStation (PlayStation) through libretro.
+ *
+ * A libretro core keeps its state in globals, so every open Emu (the game,
+ * the hidden copy that opens maps) needs its own copy of the core library.
+ * The copies come from emu_set_core_paths (Android: libswan_a.so and
+ * libswan_b.so in the APK, each with its own soname); otherwise from
+ * PSXDS_CORE, a core library copied to a temp file for each slot (glibc keys
+ * loaded libraries by file, so the copies stay apart). libretro's callbacks
+ * carry no context, so each slot has its own set of them.
+ *
+ * The picture: PS1 games draw at many sizes (256 to 640 wide, 224 to 480
+ * high) and change size mid-game. The rest of the app expects one fixed
+ * picture (GBA_W x GBA_H, now 640x480, 4:3), so each frame is scaled into
+ * it, nearest pixel.
+ *
+ * What the GBA build did with the GBA's video hardware (sprite hiding, layer
+ * toggles, the HUD split, VRAM and OAM access) has no PS1 equivalent: the
+ * PS1 draws polygons into its own video memory. Those functions are kept so
+ * the rest of the app builds, and do nothing. */
 #include "emu.h"
+#include "libretro.h"
 
-#include <mgba/flags.h>
-
-#include <mgba/core/core.h>
-#include <mgba/core/cheats.h>
-#include <mgba/core/serialize.h>
-#include <mgba/core/rewind.h>
-#include <mgba/core/config.h>
-#include <mgba-util/audio-buffer.h>
-#include <mgba-util/vfs.h>
-#include <mgba/core/log.h>
-#include "patch.h"
-#include <stdarg.h>
-#include <sys/stat.h>
+#include <dlfcn.h>
+#include <errno.h>
 #include <pthread.h>
-#include <ctype.h>
-
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
-#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <zlib.h>
 
-static void quiet_log(struct mLogger* l, int cat, enum mLogLevel level, const char* fmt, va_list args) {
-	(void) l;
-	(void) cat;
-	if (level & (mLOG_FATAL | mLOG_ERROR)) {
-		vfprintf(stderr, fmt, args);
-		fputc('\n', stderr);
+int emu_solar_level = 0;
+
+#define SLOTS 4
+#define AUDIO_RING (48000 * 2) /* stereo frames, a second at most */
+#define MAX_OPTS 32
+
+typedef struct Slot {
+	bool used;
+	void* handle;
+	char path[1024];
+	Emu* owner;
+
+	void (*init)(void);
+	void (*deinit)(void);
+	void (*set_environment)(retro_environment_t);
+	void (*set_video_refresh)(retro_video_refresh_t);
+	void (*set_audio_sample)(retro_audio_sample_t);
+	void (*set_audio_sample_batch)(retro_audio_sample_batch_t);
+	void (*set_input_poll)(retro_input_poll_t);
+	void (*set_input_state)(retro_input_state_t);
+	void (*set_controller_port_device)(unsigned, unsigned);
+	bool (*load_game)(const struct retro_game_info*);
+	void (*unload_game)(void);
+	void (*run)(void);
+	void (*reset)(void);
+	size_t (*serialize_size)(void);
+	bool (*serialize)(void*, size_t);
+	bool (*unserialize)(const void*, size_t);
+	void* (*get_memory_data)(unsigned);
+	size_t (*get_memory_size)(unsigned);
+	void (*get_system_av_info)(struct retro_system_av_info*);
+	void (*cheat_reset)(void);
+	void (*cheat_set)(unsigned, bool, const char*);
+
+	unsigned pixfmt;
+	uint16_t keys; /* libretro joypad bits */
+	int av;        /* bit 0 video, bit 1 audio */
+	unsigned rate;
+	int srcW, srcH; /* the core's last picture size */
+
+	/* sound, from the core's thread to emu_audio_read */
+	pthread_mutex_t audioLock;
+	int16_t* ring;
+	size_t ringHead, ringCount;
+
+	char save[1024]; /* the memory card file, written back on close */
+} Slot;
+
+static Slot slots[SLOTS];
+static pthread_mutex_t slotLock = PTHREAD_MUTEX_INITIALIZER;
+static char corePaths[SLOTS][1024];
+static int nCorePaths;
+static char sysDir[1024], saveDir[1024];
+static struct { char key[96]; char value[64]; } opts[MAX_OPTS];
+static int nOpts;
+
+void emu_set_core_paths(const char* const* paths, int n) {
+	nCorePaths = n < SLOTS ? n : SLOTS;
+	for (int i = 0; i < nCorePaths; i++) snprintf(corePaths[i], sizeof corePaths[i], "%s", paths[i]);
+}
+
+void emu_set_dirs(const char* bios, const char* saves) {
+	if (bios) snprintf(sysDir, sizeof sysDir, "%s", bios);
+	if (saves) snprintf(saveDir, sizeof saveDir, "%s", saves);
+}
+
+void emu_set_option(const char* key, const char* value) {
+	for (int k = 0; k < nOpts; k++)
+		if (strcmp(opts[k].key, key) == 0) {
+			snprintf(opts[k].value, sizeof opts[k].value, "%s", value);
+			return;
+		}
+	if (nOpts == MAX_OPTS) return;
+	snprintf(opts[nOpts].key, sizeof opts[0].key, "%s", key);
+	snprintf(opts[nOpts].value, sizeof opts[0].value, "%s", value);
+	nOpts++;
+}
+
+/* --- callbacks, one set per slot --------------------------------------------- */
+
+static bool env_slot(int i, unsigned cmd, void* data);
+
+static void log_slot(int i, enum retro_log_level level, const char* fmt, va_list ap) {
+	if (level < RETRO_LOG_INFO && !getenv("GBADS_DEBUG")) return;
+	char line[512];
+	vsnprintf(line, sizeof line, fmt, ap);
+	size_t n = strlen(line);
+	while (n && (line[n - 1] == '\n' || line[n - 1] == '\r')) line[--n] = 0;
+	fprintf(stderr, "swanstation[%d]: %s\n", i, line);
+}
+
+/* each frame scaled into the Emu's fixed GBA_W x GBA_H picture, bytes R,G,B,X */
+static void video_slot(int i, const void* data, unsigned w, unsigned h, size_t pitch) {
+	Slot* s = &slots[i];
+	if (!data || !w || !h || !s->owner || !s->owner->fb) return; /* duped: keep the last */
+	s->srcW = w;
+	s->srcH = h;
+	uint32_t* dst = s->owner->fb;
+	unsigned xs[GBA_W];
+	for (int x = 0; x < GBA_W; x++) xs[x] = (unsigned)x * w / GBA_W;
+	for (int y = 0; y < GBA_H; y++) {
+		const uint8_t* row = (const uint8_t*)data + (size_t)((unsigned)y * h / GBA_H) * pitch;
+		uint32_t* out = dst + y * GBA_W;
+		if (s->pixfmt == RETRO_PIXEL_FORMAT_XRGB8888) {
+			const uint32_t* src = (const uint32_t*)row;
+			for (int x = 0; x < GBA_W; x++) {
+				uint32_t p = src[xs[x]];
+				out[x] = 0xFF000000u | ((p & 0xFF) << 16) | (p & 0xFF00) | ((p >> 16) & 0xFF);
+			}
+		} else {
+			const uint16_t* src = (const uint16_t*)row;
+			for (int x = 0; x < GBA_W; x++) {
+				uint16_t p = src[xs[x]];
+				uint32_t r, g, b;
+				if (s->pixfmt == RETRO_PIXEL_FORMAT_RGB565) {
+					r = (p >> 11) & 0x1F; g = (p >> 5) & 0x3F; b = p & 0x1F;
+					g = (g << 2) | (g >> 4);
+				} else {
+					r = (p >> 10) & 0x1F; g = (p >> 5) & 0x1F; b = p & 0x1F;
+					g = (g << 3) | (g >> 2);
+				}
+				r = (r << 3) | (r >> 2);
+				b = (b << 3) | (b >> 2);
+				out[x] = 0xFF000000u | (b << 16) | (g << 8) | r;
+			}
+		}
 	}
 }
-static struct mLogger quietLogger = { .log = quiet_log };
 
-#ifndef __wasi__ /* (the web build has no threads) */
-/* ------------------------------------------------- battery saves, async
- * When a game writes its save, mGBA flushes it from the emulation thread a
- * few frames later: futimens + msync + fsync. On Android's shared storage
- * the fsync took ~200 ms, a visible freeze at every save point. The save
- * stays a mapped file as before (so what the game writes is in the file
- * right away); only the flush to the card moves to a worker thread.
- * Linux too since v1.5.3 (issue #50): on ROCKNIX an SD card, or the merged
- * /storage/roms folder, can hold an fsync just as long. */
-#include <unistd.h>
-#include <sys/stat.h>
-#ifdef __ANDROID__
-#include "android.h"
-#endif
+static int16_t input_slot(int i, unsigned port, unsigned device, unsigned index, unsigned id) {
+	(void)index;
+	if (port != 0 || (device & RETRO_DEVICE_MASK) != RETRO_DEVICE_JOYPAD) return 0;
+	uint16_t k = slots[i].keys;
+	if (id == RETRO_DEVICE_ID_JOYPAD_MASK) return (int16_t)k;
+	return id < 16 ? (k >> id) & 1 : 0;
+}
 
-typedef struct {
-	struct VFile d;
-	struct VFile* inner;
-	char path[1024];
-	pthread_t thread;
-	pthread_mutex_t lock;
-	pthread_cond_t cond;
-	bool started, pending, quit;
-} AsyncSave;
-
-static void* async_save_worker(void* arg) {
-	AsyncSave* a = arg;
-#ifdef __ANDROID__
-	android_pin_worker_thread("save writer"); /* threads start on their creator's cores: not the game's */
-#endif
-	pthread_mutex_lock(&a->lock);
-	for (;;) {
-		while (!a->pending && !a->quit) pthread_cond_wait(&a->cond, &a->lock);
-		if (!a->pending) break; /* quit, nothing left to flush */
-		a->pending = false;
-		pthread_mutex_unlock(&a->lock);
-		int fd = open(a->path, O_RDWR); /* fsync flushes the file, whichever descriptor */
-		if (fd >= 0) {
-			futimens(fd, NULL);
-			if (fsync(fd) != 0) fprintf(stderr, "save: couldn't flush %s\n", a->path);
-			else if (getenv("GBADS_DEBUG")) fprintf(stderr, "save: flushed %s\n", a->path);
-			close(fd);
+static size_t audio_batch_slot(int i, const int16_t* d, size_t frames) {
+	Slot* s = &slots[i];
+	if (!s->owner || !s->owner->audio || !s->ring || !(s->av & 2)) return frames;
+	pthread_mutex_lock(&s->audioLock);
+	for (size_t f = 0; f < frames; f++) {
+		if (s->ringCount == AUDIO_RING) { /* full: drop the oldest */
+			s->ringHead = (s->ringHead + 1) % AUDIO_RING;
+			s->ringCount--;
 		}
-		pthread_mutex_lock(&a->lock);
+		size_t at = (s->ringHead + s->ringCount) % AUDIO_RING;
+		s->ring[at * 2] = d[f * 2];
+		s->ring[at * 2 + 1] = d[f * 2 + 1];
+		s->ringCount++;
 	}
-	pthread_mutex_unlock(&a->lock);
+	pthread_mutex_unlock(&s->audioLock);
+	return frames;
+}
+static void audio_sample_slot(int i, int16_t l, int16_t r) {
+	int16_t d[2] = { l, r };
+	audio_batch_slot(i, d, 1);
+}
+static void poll_slot(int i) { (void)i; }
+
+#define SLOT_CALLBACKS(N) \
+	static void log_##N(enum retro_log_level l, const char* f, ...) { va_list ap; va_start(ap, f); log_slot(N, l, f, ap); va_end(ap); } \
+	static bool env_##N(unsigned c, void* d) { return env_slot(N, c, d); } \
+	static void video_##N(const void* d, unsigned w, unsigned h, size_t p) { video_slot(N, d, w, h, p); } \
+	static int16_t input_##N(unsigned p, unsigned d, unsigned i, unsigned id) { return input_slot(N, p, d, i, id); } \
+	static void audio_##N(int16_t l, int16_t r) { audio_sample_slot(N, l, r); } \
+	static size_t batch_##N(const int16_t* d, size_t f) { return audio_batch_slot(N, d, f); } \
+	static void poll_##N(void) { poll_slot(N); }
+SLOT_CALLBACKS(0)
+SLOT_CALLBACKS(1)
+SLOT_CALLBACKS(2)
+SLOT_CALLBACKS(3)
+
+static const retro_log_printf_t logFns[SLOTS] = { log_0, log_1, log_2, log_3 };
+static const retro_environment_t envFns[SLOTS] = { env_0, env_1, env_2, env_3 };
+static const retro_video_refresh_t videoFns[SLOTS] = { video_0, video_1, video_2, video_3 };
+static const retro_input_state_t inputFns[SLOTS] = { input_0, input_1, input_2, input_3 };
+static const retro_audio_sample_t audioFns[SLOTS] = { audio_0, audio_1, audio_2, audio_3 };
+static const retro_audio_sample_batch_t batchFns[SLOTS] = { batch_0, batch_1, batch_2, batch_3 };
+static const retro_input_poll_t pollFns[SLOTS] = { poll_0, poll_1, poll_2, poll_3 };
+
+static bool env_slot(int i, unsigned cmd, void* data) {
+	Slot* s = &slots[i];
+	switch (cmd) {
+	case RETRO_ENVIRONMENT_GET_LOG_INTERFACE:
+		((struct retro_log_callback*)data)->log = logFns[i];
+		return true;
+	case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
+		*(const char**)data = sysDir[0] ? sysDir : ".";
+		return true;
+	case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY:
+		*(const char**)data = saveDir[0] ? saveDir : ".";
+		return true;
+	case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: {
+		unsigned f = *(const unsigned*)data;
+		if (f > RETRO_PIXEL_FORMAT_RGB565) return false;
+		s->pixfmt = f;
+		return true;
+	}
+	case RETRO_ENVIRONMENT_GET_VARIABLE: {
+		struct retro_variable* v = data;
+		for (int k = 0; k < nOpts; k++)
+			if (v->key && strcmp(v->key, opts[k].key) == 0) {
+				v->value = opts[k].value;
+				return true;
+			}
+		return false;
+	}
+	case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
+		*(bool*)data = false;
+		return true;
+	case RETRO_ENVIRONMENT_GET_CAN_DUPE:
+		*(bool*)data = true;
+		return true;
+	case RETRO_ENVIRONMENT_GET_INPUT_BITMASKS:
+		return true;
+	case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE:
+		*(int*)data = s->av;
+		return true;
+	case RETRO_ENVIRONMENT_SET_HW_RENDER:
+		return false; /* software renderer (for now) */
+	case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO: {
+		const struct retro_system_av_info* av = data;
+		if (av->timing.sample_rate > 0) s->rate = (unsigned)(av->timing.sample_rate + 0.5);
+		return true;
+	}
+	case RETRO_ENVIRONMENT_SET_VARIABLES:
+	case RETRO_ENVIRONMENT_SET_CORE_OPTIONS:
+	case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL:
+	case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY:
+	case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME:
+	case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS:
+	case RETRO_ENVIRONMENT_SET_CONTROLLER_INFO:
+	case RETRO_ENVIRONMENT_SET_MEMORY_MAPS:
+	case RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO:
+	case RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL:
+	case RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS:
+	case RETRO_ENVIRONMENT_SET_MESSAGE:
+	case RETRO_ENVIRONMENT_SET_GEOMETRY:
+	case RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE:
+	case RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/* --- slots ---------------------------------------------------------------------- */
+
+/* A core library file for slot i: a given copy, or PSXDS_CORE copied */
+static bool slot_file(int i, char* out, size_t n) {
+	if (i < nCorePaths) {
+		snprintf(out, n, "%s", corePaths[i]);
+		return true;
+	}
+	const char* src = getenv("PSXDS_CORE");
+	if (!src || !*src) return false;
+	const char* tmp = getenv("TMPDIR");
+	snprintf(out, n, "%s/psxds-core-%d-%d.so", tmp && *tmp ? tmp : "/tmp", (int)getpid(), i);
+	struct stat st;
+	if (stat(out, &st) == 0) return true;
+	FILE* in = fopen(src, "rb");
+	FILE* o = in ? fopen(out, "wb") : NULL;
+	if (!o) {
+		if (in) fclose(in);
+		return false;
+	}
+	char buf[65536];
+	size_t r;
+	while ((r = fread(buf, 1, sizeof buf, in)) > 0) fwrite(buf, 1, r, o);
+	fclose(in);
+	fclose(o);
+	return true;
+}
+
+#define SYM(name) do { \
+	*(void**)&s->name = dlsym(s->handle, "retro_" #name); \
+	if (!s->name) { fprintf(stderr, "core: missing retro_%s\n", #name); goto fail; } \
+} while (0)
+
+static Slot* slot_take(Emu* e) {
+	pthread_mutex_lock(&slotLock);
+	int i = 0;
+	while (i < SLOTS && slots[i].used) i++;
+	if (i == SLOTS) {
+		pthread_mutex_unlock(&slotLock);
+		fprintf(stderr, "core: all %d copies in use\n", SLOTS);
+		return NULL;
+	}
+	Slot* s = &slots[i];
+	memset(s, 0, sizeof *s);
+	s->used = true;
+	pthread_mutex_unlock(&slotLock);
+
+	if (!slot_file(i, s->path, sizeof s->path)) {
+		fprintf(stderr, "core: no library for copy %d (set PSXDS_CORE)\n", i);
+		goto fail;
+	}
+	s->handle = dlopen(s->path, RTLD_NOW | RTLD_LOCAL);
+	if (!s->handle) {
+		fprintf(stderr, "core: %s\n", dlerror());
+		goto fail;
+	}
+	for (int k = 0; k < SLOTS; k++)
+		if (k != i && slots[k].used && slots[k].handle == s->handle) {
+			fprintf(stderr, "core: copy %d is the same library as copy %d\n", i, k);
+			s->handle = NULL;
+			goto fail;
+		}
+	SYM(init); SYM(deinit); SYM(set_environment); SYM(set_video_refresh);
+	SYM(set_audio_sample); SYM(set_audio_sample_batch); SYM(set_input_poll);
+	SYM(set_input_state); SYM(set_controller_port_device); SYM(load_game);
+	SYM(unload_game); SYM(run); SYM(reset); SYM(serialize_size); SYM(serialize);
+	SYM(unserialize); SYM(get_memory_data); SYM(get_memory_size);
+	SYM(get_system_av_info); SYM(cheat_reset); SYM(cheat_set);
+
+	pthread_mutex_init(&s->audioLock, NULL);
+	s->owner = e;
+	s->av = 3;
+	s->pixfmt = RETRO_PIXEL_FORMAT_0RGB1555;
+	s->set_environment(envFns[i]);
+	s->init();
+	s->set_video_refresh(videoFns[i]);
+	s->set_audio_sample(audioFns[i]);
+	s->set_audio_sample_batch(batchFns[i]);
+	s->set_input_poll(pollFns[i]);
+	s->set_input_state(inputFns[i]);
+	return s;
+
+fail:
+	if (s->handle) dlclose(s->handle);
+	s->handle = NULL;
+	s->used = false;
 	return NULL;
 }
 
-static bool as_sync(struct VFile* vf, void* buffer, size_t size) {
-	(void) buffer;
-	(void) size;
-	AsyncSave* a = (AsyncSave*) vf;
-	pthread_mutex_lock(&a->lock);
-	if (!a->started) a->started = pthread_create(&a->thread, NULL, async_save_worker, a) == 0;
-	bool ok = a->started;
-	if (ok) {
-		a->pending = true;
-		pthread_cond_signal(&a->cond);
+static void slot_release(Slot* s) {
+	if (s->handle) {
+		s->deinit();
+		dlclose(s->handle);
 	}
-	pthread_mutex_unlock(&a->lock);
-	if (!ok) return a->inner->sync(a->inner, buffer, size);
+	free(s->ring);
+	s->ring = NULL;
+	s->handle = NULL;
+	s->owner = NULL;
+	pthread_mutex_lock(&slotLock);
+	s->used = false;
+	pthread_mutex_unlock(&slotLock);
+}
+
+static Slot* S(const Emu* e) { return (Slot*)e->core; }
+
+/* --- files ------------------------------------------------------------------------- */
+
+static const char* ext_of(const char* name) {
+	const char* dot = strrchr(name, '.');
+	return dot ? dot + 1 : "";
+}
+
+bool emu_is_rom_name(const char* name) {
+	static const char* exts[] = { "cue", "chd", "pbp", "m3u", "iso", "img", "ccd", "ecm", "mds", "exe", "psexe", "psf", NULL };
+	const char* x = ext_of(name);
+	for (int i = 0; exts[i]; i++)
+		if (strcasecmp(x, exts[i]) == 0) return true;
+	return false;
+}
+
+bool emu_is_archive_name(const char* name) { (void)name; return false; }
+
+/* The GBA build read the cartridge header (title at 0xA0, code at 0xAC).
+ * Until PSX-DS reads a disc's serial, the header is made up: the file name
+ * as the title and "PSX1" as the code. */
+bool emu_rom_header(const char* path, uint8_t* out, size_t n) {
+	struct stat st;
+	if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) return false;
+	memset(out, 0, n);
+	const char* base = strrchr(path, '/');
+	base = base ? base + 1 : path;
+	if (n > 0xA0) {
+		size_t len = strcspn(base, ".");
+		if (len > 12) len = 12;
+		if (len > n - 0xA0) len = n - 0xA0;
+		memcpy(out + 0xA0, base, len);
+	}
+	if (n >= 0xB0) memcpy(out + 0xAC, "PSX1", 4);
 	return true;
 }
 
-static bool as_close(struct VFile* vf) {
-	AsyncSave* a = (AsyncSave*) vf;
-	if (a->started) {
-		pthread_mutex_lock(&a->lock);
-		a->quit = true;
-		pthread_cond_signal(&a->cond);
-		pthread_mutex_unlock(&a->lock);
-		pthread_join(a->thread, NULL); /* any flush asked for is done first */
-	}
-	bool ok = a->inner->close(a->inner);
-	pthread_mutex_destroy(&a->lock);
-	pthread_cond_destroy(&a->cond);
-	free(a);
-	return ok;
-}
-
-static off_t as_seek(struct VFile* vf, off_t o, int w) { return ((AsyncSave*) vf)->inner->seek(((AsyncSave*) vf)->inner, o, w); }
-static ssize_t as_read(struct VFile* vf, void* b, size_t n) { return ((AsyncSave*) vf)->inner->read(((AsyncSave*) vf)->inner, b, n); }
-static ssize_t as_readline(struct VFile* vf, char* b, size_t n) { return ((AsyncSave*) vf)->inner->readline(((AsyncSave*) vf)->inner, b, n); }
-static ssize_t as_write(struct VFile* vf, const void* b, size_t n) { return ((AsyncSave*) vf)->inner->write(((AsyncSave*) vf)->inner, b, n); }
-static void* as_map(struct VFile* vf, size_t n, int f) { return ((AsyncSave*) vf)->inner->map(((AsyncSave*) vf)->inner, n, f); }
-static void as_unmap(struct VFile* vf, void* m, size_t n) { ((AsyncSave*) vf)->inner->unmap(((AsyncSave*) vf)->inner, m, n); }
-static void as_truncate(struct VFile* vf, size_t n) { ((AsyncSave*) vf)->inner->truncate(((AsyncSave*) vf)->inner, n); }
-static ssize_t as_size(struct VFile* vf) { return ((AsyncSave*) vf)->inner->size(((AsyncSave*) vf)->inner); }
-
-static struct VFile* async_save_open(const char* path) {
-	struct VFile* inner = VFileOpen(path, O_CREAT | O_RDWR);
-	if (!inner) return NULL;
-	AsyncSave* a = calloc(1, sizeof(*a));
-	if (!a) return inner;
-	a->inner = inner;
-	snprintf(a->path, sizeof(a->path), "%s", path);
-	pthread_mutex_init(&a->lock, NULL);
-	pthread_cond_init(&a->cond, NULL);
-	a->d = (struct VFile) { as_close, as_seek, as_read, as_readline, as_write, as_map, as_unmap, as_truncate, as_size, as_sync };
-	return &a->d;
-}
-#endif
-
-static void split_resync(Emu* e);
-static void split_release(Emu* e);
-
-/* ---------------------------------------------- patches (GEN-9) */
-/* Which patches the game applies (emu_patch_plan): every core that opens
- * that ROM gets them (the game, the hidden copy for map captures, logos,
- * twins). Any other ROM, or none planned: the patch file beside it, if any. */
-#define PLAN_MAX 8
-uint32_t doCrc32(const void* buf, size_t size); /* (libmgba's: its header wants zlib.h) */
-static pthread_mutex_t patchedLock = PTHREAD_MUTEX_INITIALIZER;
-static struct {
-	char rom[1024];
-	char files[PLAN_MAX][1024];
-	int n;
-} plan;
-/* The last patched ROM, so it's patched once: keyed by the ROM's and every
- * patch's paths, sizes and times. */
-static struct {
-	char key[PLAN_MAX * 1100 + 1100];
-	int result;
-	char names[256];
-	char skipped[256]; /* (PATCH_PARTIAL) the ones left out */
-	uint32_t fileCrc;
-	uint8_t* data; /* the patched ROM (NULL unless something was applied) */
-	size_t size;
-} patched;
-
-void emu_patch_plan(const char* rom, char files[][1024], int n) {
-	pthread_mutex_lock(&patchedLock);
-	snprintf(plan.rom, sizeof(plan.rom), "%s", rom ? rom : "");
-	plan.n = 0;
-	for (int i = 0; i < n && i < PLAN_MAX; ++i) snprintf(plan.files[plan.n++], sizeof(plan.files[0]), "%s", files[i]);
-	pthread_mutex_unlock(&patchedLock);
-}
-
-static uint8_t* read_file(const char* path, size_t* n) {
-	struct stat st;
-	*n = 0;
-	if (stat(path, &st) || st.st_size <= 0 || st.st_size > 64 * 1024 * 1024) return NULL;
+/* A disc image is hundreds of MB: these read only its first MB (enough for a
+ * checksum that tells files apart). */
+uint8_t* emu_rom_read_all(const char* path, size_t* size) {
 	FILE* f = fopen(path, "rb");
-	uint8_t* p = f ? malloc((size_t) st.st_size) : NULL;
-	if (p && fread(p, 1, (size_t) st.st_size, f) == (size_t) st.st_size) *n = (size_t) st.st_size;
-	else {
-		free(p);
-		p = NULL;
+	if (!f) return NULL;
+	uint8_t* buf = malloc(1 << 20);
+	size_t n = buf ? fread(buf, 1, 1 << 20, f) : 0;
+	fclose(f);
+	if (!n) {
+		free(buf);
+		return NULL;
 	}
-	if (f) fclose(f);
-	return p;
-}
-
-/* The patched ROM for romPath, or NULL: *result says why (PATCH_NONE: no
- * patch for it). Several patches apply in order; one that can't be applied
- * is left out (the result says so) and the rest go on. Returns a copy the
- * caller frees. patchName (256 bytes): the patches' file names, " + "
- * between. */
-static uint8_t* patched_with(const char* romPath, char files[][1024], int n, size_t* size, int* result, char* patchName,
-                             uint32_t* fileCrc, char* skipped);
-static uint8_t* patched_rom(const char* romPath, size_t* size, int* result, char* patchName, uint32_t* fileCrc,
-                            char* skipped) {
-	char files[PLAN_MAX][1024];
-	int n = 0;
-	bool planned = false;
-	pthread_mutex_lock(&patchedLock);
-	if (plan.rom[0] && !strcmp(plan.rom, romPath)) {
-		planned = true;
-		for (int i = 0; i < plan.n; ++i) memcpy(files[n++], plan.files[i], sizeof(files[0]));
-	}
-	pthread_mutex_unlock(&patchedLock);
-	if (!planned && patch_find(romPath, files[0], sizeof(files[0]))) n = 1; /* (beside the ROM) */
-	return patched_with(romPath, files, n, size, result, patchName, fileCrc, skipped);
-}
-
-/* (the same with the patches given) */
-static uint8_t* patched_with(const char* romPath, char files[][1024], int n, size_t* size, int* result, char* patchName,
-                             uint32_t* fileCrc, char* skipped) {
-	*result = PATCH_NONE;
-	if (n > PLAN_MAX) n = PLAN_MAX;
-	if (!n) return NULL;
-	char key[sizeof(patched.key)];
-	struct stat st;
-	int k = snprintf(key, sizeof(key), "%s|%lld|%lld", romPath, stat(romPath, &st) ? -1LL : (long long) st.st_size,
-	                 stat(romPath, &st) ? -1LL : (long long) st.st_mtime);
-	for (int i = 0; i < n && k < (int) sizeof(key); ++i) {
-		bool ok = stat(files[i], &st) == 0;
-		k += snprintf(key + k, sizeof(key) - (size_t) k, "|%s|%lld|%lld", files[i], ok ? (long long) st.st_size : -1LL,
-		              ok ? (long long) st.st_mtime : -1LL);
-	}
-	pthread_mutex_lock(&patchedLock);
-	if (strcmp(patched.key, key)) {
-		free(patched.data);
-		memset(&patched, 0, sizeof(patched));
-		snprintf(patched.key, sizeof(patched.key), "%s", key);
-		patched.result = PATCH_UNREADABLE;
-		size_t romN = 0;
-		uint8_t* rom = emu_rom_read_all(romPath, &romN);
-		int applied = 0, failed = PATCH_NONE;
-		if (rom) {
-			patched.fileCrc = doCrc32(rom, romN);
-			for (int i = 0; i < n; ++i) {
-				size_t pn = 0;
-				uint8_t* p = read_file(files[i], &pn);
-				uint8_t* out = NULL;
-				size_t outN = 0;
-				int r = p ? patch_apply(p, pn, rom, romN, &out, &outN) : PATCH_UNREADABLE;
-				free(p);
-				fprintf(stderr, "patch %s: %s\n", patch_name(files[i]),
-				        r == PATCH_APPLIED     ? "applied"
-				        : r == PATCH_WRONG_ROM ? "made for another ROM, not applied"
-				                               : "can't be read, not applied");
-				if (r == PATCH_APPLIED) {
-					free(rom);
-					rom = out;
-					romN = outN;
-					size_t l = strlen(patched.names);
-					snprintf(patched.names + l, sizeof(patched.names) - l, "%s%s", l ? " + " : "", patch_name(files[i]));
-					++applied;
-				} else {
-					if (failed == PATCH_NONE) failed = r;
-					size_t l = strlen(patched.skipped);
-					snprintf(patched.skipped + l, sizeof(patched.skipped) - l, "%s%s", l ? " + " : "", patch_name(files[i]));
-				}
-			}
-			/* (none applied: why the first wasn't, under its name) */
-			patched.result = failed == PATCH_NONE ? PATCH_APPLIED : applied ? PATCH_PARTIAL : failed;
-			if (!applied) snprintf(patched.names, sizeof(patched.names), "%s", patched.skipped);
-			if (applied) {
-				patched.data = rom;
-				patched.size = romN;
-				rom = NULL;
-			}
-		}
-		free(rom);
-	}
-	*result = patched.result;
-	if (fileCrc) *fileCrc = patched.fileCrc;
-	if (patchName) snprintf(patchName, 256, "%s", patched.names);
-	if (skipped) snprintf(skipped, 256, "%s", patched.skipped);
-	uint8_t* copy = NULL;
-	if (patched.data && (copy = malloc(patched.size))) {
-		memcpy(copy, patched.data, patched.size);
-		*size = patched.size;
-	}
-	pthread_mutex_unlock(&patchedLock);
-	return copy;
-}
-
-uint8_t* emu_rom_read_patched(const char* path, char files[][1024], int n, size_t* size, int* patch, char* patchName) {
-	int r;
-	uint8_t* p = patched_with(path, files, n, size, &r, patchName, NULL, NULL);
-	if (patch) *patch = r;
-	return p ? p : emu_rom_read_all(path, size);
+	*size = n;
+	return buf;
 }
 
 uint8_t* emu_rom_read_played(const char* path, size_t* size, int* patch, char* patchName, uint32_t* fileCrc) {
-	int r;
-	uint8_t* p = patched_rom(path, size, &r, patchName, fileCrc, NULL);
-	if (patch) *patch = r;
-	if (p) return p;
-	uint8_t* rom = emu_rom_read_all(path, size);
-	if (rom && fileCrc) *fileCrc = doCrc32(rom, *size);
-	return rom;
+	uint8_t* buf = emu_rom_read_all(path, size);
+	if (patch) *patch = 0;
+	if (patchName) patchName[0] = 0;
+	if (buf && fileCrc) *fileCrc = (uint32_t)crc32(0, buf, (uInt)*size);
+	return buf;
 }
 
-/* The game cartridge's sun sensor (Boktai): there's none on the device, so
- * the sunlight the games are given is a setting (solar_level, 0-10, as
- * mGBA's own levels). Every core reads it: the game, the hidden copies, the
- * logo's. */
-int emu_solar_level = 6;
-static void lux_sample(struct GBALuminanceSource* lux) {
-	(void) lux;
-}
-static uint8_t lux_read(struct GBALuminanceSource* lux) {
-	(void) lux;
-	int level = emu_solar_level < 0 ? 0 : emu_solar_level > 10 ? 10 : emu_solar_level;
-	int value = 0x16 + (level > 0 ? GBA_LUX_LEVELS[level - 1] : 0);
-	return (uint8_t) (0xFF - value);
-}
-/* (testing: GBADS_RTC_FIXED=<unix seconds> holds the cartridge clock still, for games
- * that look at the time of day: Boktai's areas change with it. A state carries its
- * clock's setting, so this is applied again after each load.) */
-static void rtc_pin(Emu* e) {
-	const char* t = getenv("GBADS_RTC_FIXED");
-	if (!t) return;
-	e->core->rtc.override = RTC_FIXED;
-	e->core->rtc.value = atoll(t) * 1000;
+void emu_patch_plan(const char* rom, char files[][1024], int n) { (void)rom; (void)files; (void)n; }
+
+uint8_t* emu_rom_read_patched(const char* path, char files[][1024], int n, size_t* size, int* patch, char* patchName) {
+	(void)files; (void)n;
+	return emu_rom_read_played(path, size, patch, patchName, NULL);
 }
 
-static struct GBALuminanceSource luxSource = { .sample = lux_sample, .readLuminance = lux_read };
+uint32_t doCrc32(const void* buf, size_t size) { return (uint32_t)crc32(0, buf, (uInt)size); }
+
+/* --- open / close ----------------------------------------------------------------- */
+
+static void card_load(Slot* s, const char* path) {
+	snprintf(s->save, sizeof s->save, "%s", path ? path : "");
+	if (!path) return;
+	uint8_t* mem = s->get_memory_data(RETRO_MEMORY_SAVE_RAM);
+	size_t n = s->get_memory_size(RETRO_MEMORY_SAVE_RAM);
+	FILE* f = mem && n ? fopen(path, "rb") : NULL;
+	if (!f) return;
+	size_t r = fread(mem, 1, n, f);
+	(void)r;
+	fclose(f);
+}
+
+static void card_write(Slot* s) {
+	if (!s->save[0] || !s->handle) return;
+	uint8_t* mem = s->get_memory_data(RETRO_MEMORY_SAVE_RAM);
+	size_t n = s->get_memory_size(RETRO_MEMORY_SAVE_RAM);
+	if (!mem || !n) return;
+	char tmp[1100];
+	snprintf(tmp, sizeof tmp, "%s.new", s->save);
+	FILE* f = fopen(tmp, "wb");
+	if (!f) return;
+	bool ok = fwrite(mem, 1, n, f) == n;
+	ok = fclose(f) == 0 && ok;
+	if (ok) rename(tmp, s->save);
+}
 
 bool emu_open(Emu* e, const char* romPath, const char* savePath, bool audio) {
-	memset(e, 0, sizeof(*e));
-	mLogSetDefaultLogger(&quietLogger);
-	e->core = mCoreFind(romPath);
-	if (!e->core) {
-		fprintf(stderr, "mCoreFind failed for %s\n", romPath);
-		return false;
-	}
-	if (!e->core->init(e->core)) {
-		fprintf(stderr, "core init failed\n");
-		return false;
-	}
-	mCoreInitConfig(e->core, NULL);
-	struct mCoreOptions opts = { .useBios = false, .volume = 0x100, .audioBuffers = 1024 };
-	mCoreConfigLoadDefaults(&e->core->config, &opts);
-	mCoreLoadConfig(e->core);
-
+	memset(e, 0, sizeof *e);
 	e->fb = calloc(GBA_W * GBA_H, sizeof(uint32_t));
-	e->core->setVideoBuffer(e->core, (mColor*) e->fb, GBA_W);
-	e->core->setPeripheral(e->core, mPERIPH_GBA_LUMINANCE, &luxSource);
-	/* (testing: GBADS_RTC_FIXED=<unix seconds> holds the cartridge clock still, for games
-	 * that look at the time of day: Boktai's areas change with it) */
-	rtc_pin(e);
-	e->audio = audio;
-	if (audio) {
-		e->core->setAudioBufferSize(e->core, 2048);
-	}
-
-	size_t patchedSize = 0;
-	uint8_t* patchedRom = patched_rom(romPath, &patchedSize, &e->patch, e->patchName, &e->fileCrc, e->patchSkipped);
-	if (patchedRom) { /* a patch file beside the ROM, applied (GEN-9) */
-		struct VFile* vf = VFileMemChunk(patchedRom, patchedSize);
-		free(patchedRom);
-		if (!vf || !e->core->loadROM(e->core, vf)) {
-			if (vf) vf->close(vf);
-			fprintf(stderr, "could not load the patched ROM %s\n", romPath);
-			return false;
-		}
-	} else if (!mCoreLoadFile(e->core, romPath)) {
-		fprintf(stderr, "could not load ROM %s\n", romPath);
+	if (!e->fb) return false;
+	Slot* s = slot_take(e);
+	if (!s) {
+		free(e->fb);
+		e->fb = NULL;
 		return false;
 	}
-	if (savePath) {
-#ifndef __wasi__
-		struct VFile* vf = async_save_open(savePath);
-#else
-		struct VFile* vf = VFileOpen(savePath, O_CREAT | O_RDWR);
-#endif
-		if (vf) {
-			e->core->loadSave(e->core, vf);
-		} else {
-			fprintf(stderr, "warning: cannot open save file %s\n", savePath);
-		}
-	}
-	e->core->reset(e->core);
+	e->core = (struct mCore*)s;
+	e->audio = audio;
+	if (audio) s->ring = calloc(AUDIO_RING * 2, sizeof(int16_t));
 
-	struct mGameInfo info;
-	memset(&info, 0, sizeof(info));
-	e->core->getGameInfo(e->core, &info);
-	memcpy(e->gameCode, info.code, 4);
-	e->gameCode[4] = 0;
-	e->core->checksum(e->core, &e->romCrc, mCHECKSUM_CRC32); /* (worked out by mGBA as it loaded the ROM) */
-	if (e->patch != PATCH_APPLIED && e->patch != PATCH_PARTIAL) e->fileCrc = e->romCrc;
+	struct retro_game_info info = { .path = romPath };
+	if (!s->load_game(&info)) {
+		fprintf(stderr, "could not load %s\n", romPath);
+		slot_release(s);
+		free(e->fb);
+		memset(e, 0, sizeof *e);
+		return false;
+	}
+	s->set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
+	struct retro_system_av_info av;
+	memset(&av, 0, sizeof av);
+	s->get_system_av_info(&av);
+	s->rate = av.timing.sample_rate > 0 ? (unsigned)(av.timing.sample_rate + 0.5) : 44100;
+	card_load(s, savePath);
+
+	uint8_t h[0xC0];
+	if (emu_rom_header(romPath, h, sizeof h)) memcpy(e->gameCode, h + 0xAC, 4);
+	size_t n;
+	uint8_t* head = emu_rom_read_all(romPath, &n);
+	if (head) {
+		e->romCrc = e->fileCrc = doCrc32(head, n);
+		free(head);
+	}
 	return true;
 }
 
-static void hide_release(Emu* e);
-
-static struct mCoreRewindContext rewindCtx;
-static Emu* rewindOwner;
-
 void emu_close(Emu* e) {
-	if (e->core) {
-		if (rewindOwner == e) emu_rewind_deinit();
-		split_release(e);
-		hide_release(e);
-		mCoreConfigDeinit(&e->core->config);
-		e->core->deinit(e->core);
-		e->core = NULL;
+	Slot* s = S(e);
+	if (s) {
+		card_write(s);
+		s->unload_game();
+		slot_release(s);
 	}
 	free(e->fb);
 	e->fb = NULL;
+	e->core = NULL;
 }
 
-bool emu_cancelled(const Emu* e) {
-	return e->cancel && *e->cancel;
-}
+/* --- running ------------------------------------------------------------------------- */
 
-void emu_frame(Emu* e, uint32_t keys) {
-	if (emu_cancelled(e)) return;
-	++e->frames;
-	e->core->setKeys(e->core, keys);
-	e->core->runFrame(e->core);
-	if (!e->audio) {
-		struct mAudioBuffer* ab = e->core->getAudioBuffer(e->core);
-		if (ab) {
-			mAudioBufferClear(ab);
-		}
-	}
-}
-
-/* A frame run without drawing it (the renderer still gets every write to
- * VRAM, the palettes, OAM and the registers): for the hidden copies'
- * waits, whose pictures nobody looks at; about half a frame's work saved.
- * e->fb keeps the last picture drawn. */
-void emu_frame_blind(Emu* e, uint32_t keys) {
-	struct GBA* gba = e->core->board;
-	gba->video.frameskipCounter = 1;
-	emu_frame(e, keys);
-	gba->video.frameskipCounter = 0;
-}
-
-void emu_reset(Emu* e) {
-	e->core->reset(e->core);
-	split_resync(e);
-}
-
-size_t emu_state_size(Emu* e) {
-	return e->core->stateSize(e->core);
-}
-
-bool emu_state_save(Emu* e, void* buf) {
-	return e->core->saveState(e->core, buf);
-}
-
-bool emu_state_load(Emu* e, const void* buf) {
-	bool ok = e->core->loadState(e->core, buf);
-	rtc_pin(e);
-	split_resync(e);
-	return ok;
-}
-
-/* ------------------------------------------------------------ rewind */
-
-/* mGBA's rewind: a state saved every so often, kept as the difference from
- * the next one (worked out on mGBA's own thread). One buffer, for the game
- * being played. */
-void emu_rewind_init(Emu* e, size_t entries) {
-	emu_rewind_deinit();
-	memset(&rewindCtx, 0, sizeof(rewindCtx));
-	mCoreRewindContextInit(&rewindCtx, entries, true);
-	rewindOwner = e;
-}
-
-void emu_rewind_deinit(void) {
-	if (!rewindOwner) return;
-	mCoreRewindContextDeinit(&rewindCtx);
-	rewindOwner = NULL;
-}
-
-void emu_rewind_append(Emu* e) {
-	if (rewindOwner == e) mCoreRewindAppend(&rewindCtx, e->core);
-}
-
-bool emu_rewind_step(Emu* e) {
-	if (rewindOwner != e || !mCoreRewindRestore(&rewindCtx, e->core, 1)) return false;
-	split_resync(e);
-	return true;
-}
-
-size_t emu_rewind_count(void) {
-	return rewindOwner ? rewindCtx.size : 0;
-}
-
-/* ---------------------------------------------------------------- state files
- *
- * GBA DS's state files are mGBA's own: the state, then mGBA's extra data
- * (the battery save, the clock, when it was saved, and GBA DS's second
- * screen, EXTDATA_GBADS below).
- *
- * RetroArch's (and BananaFront's: the same files) wrap a core's state
- * (issue #39): "RASTATE" and version 1, then blocks (a 4-character tag, a
- * u32 size, the data, zeros to a multiple of 8) up to "END ": MEM the
- * core's own bytes (for its mGBA core, the same as GBA DS's states:
- * checked byte for byte), ACHV RetroAchievements progress, RPLY a replay.
- * Usually compressed (savestate_file_compression, on by default):
- * "#RZIPv" 1 "#", u32 chunk size, u64 size, then each chunk as a u32 size
- * and zlib's data. (RZIP version 2, zstd, isn't read.) Loading takes any
- * of these; saving writes the format asked for. All numbers little-endian. */
-
-/* (in mGBA's subsystem range, which it doesn't use for the GBA) */
-#define EXTDATA_GBADS ((enum mStateExtdataTag) (EXTDATA_SUBSYSTEM_START + 0x3D))
-
-#ifdef USE_ZLIB
-/* (zlib's, linked with libmgba; its header isn't on every build's include path) */
-int compress2(unsigned char* dest, unsigned long* destLen, const unsigned char* source, unsigned long sourceLen, int level);
-int uncompress(unsigned char* dest, unsigned long* destLen, const unsigned char* source, unsigned long sourceLen);
-unsigned long compressBound(unsigned long sourceLen);
-#endif
-
-static const uint8_t RZIP_MAGIC[8] = { '#', 'R', 'Z', 'I', 'P', 'v', 1, '#' };
-#define RZIP_CHUNK (128 * 1024) /* (RetroArch's) */
-#define STATE_FILE_MAX (64 * 1024 * 1024)
-
-static uint32_t le32(const uint8_t* p) {
-	return (uint32_t) p[0] | (uint32_t) p[1] << 8 | (uint32_t) p[2] << 16 | (uint32_t) p[3] << 24;
-}
-static void put_le32(uint8_t* p, uint32_t v) {
-	for (int i = 0; i < 4; ++i) p[i] = (uint8_t) (v >> (8 * i));
-}
-
-/* mGBA's state for the GBA: versionMagic 0x01000000 + version */
-static bool is_mgba_state(const uint8_t* b, size_t n) {
-	return n >= 12 && b[1] == 0 && b[2] == 0 && b[3] == 0x01;
-}
-
-/* A state file read whole with RetroArch's wrapping taken off: the core's
- * bytes (malloc'd, *n) and what the file was. NULL when there's nothing
- * to load (*kind says why). */
-static uint8_t* state_file_read(const char* path, size_t* n, StateFileKind* kind) {
-	*n = 0;
-	*kind = STATE_FILE_NONE;
-	FILE* f = fopen(path, "rb");
-	if (!f) return NULL;
-	*kind = STATE_FILE_UNREADABLE;
-	fseek(f, 0, SEEK_END);
-	long len = ftell(f);
-	fseek(f, 0, SEEK_SET);
-	uint8_t* b = len > 0 && len <= STATE_FILE_MAX ? malloc((size_t) len) : NULL;
-	bool ok = b && fread(b, 1, (size_t) len, f) == (size_t) len;
-	fclose(f);
-	if (!ok) {
-		free(b);
-		return NULL;
-	}
-	size_t bn = (size_t) len;
-	bool wrapped = false;
-	if (bn >= 20 && !memcmp(b, RZIP_MAGIC, 6) && b[7] == '#') {
-		uint8_t* out = NULL;
-		size_t got = 0;
-#ifdef USE_ZLIB
-		uint32_t chunk = le32(b + 8);
-		uint64_t total = (uint64_t) le32(b + 12) | (uint64_t) le32(b + 16) << 32;
-		if (b[6] == 1 && chunk && total && total <= STATE_FILE_MAX) out = malloc((size_t) total);
-		size_t at = 20;
-		while (out && got < total) {
-			unsigned long dl = (unsigned long) (total - got < chunk ? total - got : chunk);
-			uint32_t zn = at + 4 <= bn ? le32(b + at) : 0;
-			if (!zn || zn > bn - at - 4 || uncompress(out + got, &dl, b + at + 4, zn) != 0 || !dl) {
-				free(out);
-				out = NULL;
-				break;
-			}
-			got += dl, at += 4 + zn;
-		}
-#endif
-		free(b);
-		if (!out) return NULL; /* (zstd, damaged, or no zlib in this build) */
-		b = out;
-		bn = got;
-		wrapped = true;
-	}
-	if (bn >= 8 && !memcmp(b, "RASTATE", 7)) {
-		size_t at = 8, memAt = 0, memN = 0;
-		bool have = false;
-		while (b[7] == 1 && at + 8 <= bn) {
-			uint32_t sz = le32(b + at + 4);
-			if (!memcmp(b + at, "END ", 4) || sz > bn - at - 8) break;
-			if (!memcmp(b + at, "MEM ", 4)) memAt = at + 8, memN = sz, have = true;
-			size_t adv = 8 + (((size_t) sz + 7) & ~(size_t) 7);
-			if (adv > bn - at) break;
-			at += adv;
-		}
-		if (!have || !memN) {
-			free(b);
-			return NULL;
-		}
-		memmove(b, b + memAt, memN);
-		bn = memN;
-		wrapped = true;
-	}
-	/* (compressed with no RASTATE inside: RetroArch's older files, the core's bytes alone) */
-	bool mgba = is_mgba_state(b, bn);
-	*kind = !mgba ? STATE_FILE_OTHER_CORE : wrapped ? STATE_FILE_RETROARCH : STATE_FILE_MGBA;
-	*n = bn;
+/* GBA DS's keys (emu.h K_*) as libretro's PS1 pad bits */
+static uint16_t pad_bits(uint32_t keys) {
+	static const struct { uint32_t k; unsigned id; } map[] = {
+		{ K_A, RETRO_DEVICE_ID_JOYPAD_A },          /* right: Circle */
+		{ K_B, RETRO_DEVICE_ID_JOYPAD_B },          /* bottom: Cross */
+		{ K_X, RETRO_DEVICE_ID_JOYPAD_X },          /* top: Triangle */
+		{ K_Y, RETRO_DEVICE_ID_JOYPAD_Y },          /* left: Square */
+		{ K_SELECT, RETRO_DEVICE_ID_JOYPAD_SELECT },
+		{ K_START, RETRO_DEVICE_ID_JOYPAD_START },
+		{ K_UP, RETRO_DEVICE_ID_JOYPAD_UP },
+		{ K_DOWN, RETRO_DEVICE_ID_JOYPAD_DOWN },
+		{ K_LEFT, RETRO_DEVICE_ID_JOYPAD_LEFT },
+		{ K_RIGHT, RETRO_DEVICE_ID_JOYPAD_RIGHT },
+		{ K_L, RETRO_DEVICE_ID_JOYPAD_L },
+		{ K_R, RETRO_DEVICE_ID_JOYPAD_R },
+		{ K_L2, RETRO_DEVICE_ID_JOYPAD_L2 },
+		{ K_R2, RETRO_DEVICE_ID_JOYPAD_R2 },
+		{ K_L3, RETRO_DEVICE_ID_JOYPAD_L3 },
+		{ K_R3, RETRO_DEVICE_ID_JOYPAD_R3 },
+	};
+	uint16_t b = 0;
+	for (size_t i = 0; i < sizeof map / sizeof map[0]; i++)
+		if (keys & map[i].k) b |= 1u << map[i].id;
 	return b;
 }
 
-/* written beside, then put in its place: a state is never half written */
-static bool write_whole(const char* path, const void* data, size_t n) {
-	char tmp[1100];
-	snprintf(tmp, sizeof(tmp), "%s.tmp", path);
-	FILE* f = fopen(tmp, "wb");
-	if (!f) return false;
-	bool ok = fwrite(data, 1, n, f) == n;
-	ok = fclose(f) == 0 && ok;
-	if (ok) ok = rename(tmp, path) == 0;
-	if (!ok) remove(tmp);
-	return ok;
+bool emu_cancelled(const Emu* e) { return e->cancel && *e->cancel; }
+
+static void run(Emu* e, uint32_t keys, int av) {
+	Slot* s = S(e);
+	if (!s || emu_cancelled(e)) return;
+	s->keys = pad_bits(keys);
+	s->av = av;
+	s->run();
+	e->frames++;
 }
 
-/* the core's bytes in RetroArch's file: malloc'd, *outN */
-static uint8_t* retroarch_wrap(const uint8_t* core, size_t n, bool compress, size_t* outN) {
-	size_t pad = (n + 7) & ~(size_t) 7, pn = 8 + 8 + pad + 8;
-	uint8_t* p = calloc(1, pn);
-	if (!p) return NULL;
-	memcpy(p, "RASTATE", 7), p[7] = 1;
-	memcpy(p + 8, "MEM ", 4), put_le32(p + 12, (uint32_t) n), memcpy(p + 16, core, n);
-	memcpy(p + 16 + pad, "END ", 4); /* (size 0) */
-	*outN = pn;
-#ifdef USE_ZLIB
-	if (!compress) return p;
-	size_t chunks = (pn + RZIP_CHUNK - 1) / RZIP_CHUNK, bound = compressBound(RZIP_CHUNK);
-	uint8_t* z = malloc(20 + chunks * (4 + bound));
-	if (!z) {
-		free(p);
-		return NULL;
-	}
-	memcpy(z, RZIP_MAGIC, 8);
-	put_le32(z + 8, RZIP_CHUNK), put_le32(z + 12, (uint32_t) pn), put_le32(z + 16, 0);
-	size_t at = 20;
-	for (size_t off = 0; off < pn; off += RZIP_CHUNK) {
-		unsigned long zn = bound;
-		size_t sn = pn - off < RZIP_CHUNK ? pn - off : RZIP_CHUNK;
-		if (compress2(z + at + 4, &zn, p + off, sn, 6) != 0) {
-			free(p), free(z);
-			return NULL;
-		}
-		put_le32(z + at, (uint32_t) zn);
-		at += 4 + zn;
-	}
-	free(p);
-	*outN = at;
-	return z;
-#else
-	(void) compress; /* (no zlib here: uncompressed, which RetroArch reads too) */
-	return p;
-#endif
+void emu_frame(Emu* e, uint32_t keys) { run(e, keys, e->audio ? 3 : 1); }
+void emu_frame_blind(Emu* e, uint32_t keys) { run(e, keys, 0); }
+
+void emu_reset(Emu* e) {
+	if (S(e)) S(e)->reset();
 }
+
+/* --- states ----------------------------------------------------------------------------- */
+
+size_t emu_state_size(Emu* e) { return S(e) ? S(e)->serialize_size() : 0; }
+bool emu_state_save(Emu* e, void* buf) { return S(e) && S(e)->serialize(buf, S(e)->serialize_size()); }
+bool emu_state_load(Emu* e, const void* buf) { return S(e) && S(e)->unserialize(buf, S(e)->serialize_size()); }
+
+/* Rewind isn't there yet (a PS1 state is 11 MB: it needs a different design). */
+void emu_rewind_init(Emu* e, size_t entries) { (void)e; (void)entries; }
+void emu_rewind_deinit(void) {}
+void emu_rewind_append(Emu* e) { (void)e; }
+bool emu_rewind_step(Emu* e) { (void)e; return false; }
+size_t emu_rewind_count(void) { return 0; }
+
+/* State files: "PSXDSST1", the extra data's size and the game's checksum
+ * (little-endian u32 each), the extra data, then the core's state. */
+static const char STATE_MAGIC[8] = { 'P', 'S', 'X', 'D', 'S', 'S', 'T', '1' };
 
 bool emu_state_save_file_as(Emu* e, const char* path, const void* extra, size_t extraN, StateFormat fmt) {
-	struct VFile* vf = VFileMemChunk(NULL, 0);
-	if (!vf) return false;
-	bool ok = mCoreSaveStateNamed(e->core, vf, SAVESTATE_SAVEDATA | SAVESTATE_RTC | SAVESTATE_METADATA);
-	if (ok && extra) {
-		/* GBA DS's own data, put in with mGBA's (other emulators skip it) */
-		struct mStateExtdata ext;
-		mStateExtdataInit(&ext);
-		mCoreExtractExtdata(e->core, vf, &ext);
-		void* copy = malloc(extraN ? extraN : 1);
-		if (copy) {
-			memcpy(copy, extra, extraN);
-			struct mStateExtdataItem item = { .size = (int32_t) extraN, .data = copy, .clean = free };
-			mStateExtdataPut(&ext, EXTDATA_GBADS, &item);
-			size_t sz = e->core->stateSize(e->core);
-			vf->truncate(vf, sz);
-			vf->seek(vf, sz, SEEK_SET);
-			if (!mStateExtdataSerialize(&ext, vf)) fprintf(stderr, "save state: GBA DS's own data not kept with it\n");
-		}
-		mStateExtdataDeinit(&ext);
+	(void)fmt;
+	Slot* s = S(e);
+	if (!s) return false;
+	size_t n = s->serialize_size();
+	void* buf = malloc(n);
+	if (!buf || !s->serialize(buf, n)) {
+		free(buf);
+		return false;
 	}
-	size_t n = ok ? (size_t) vf->size(vf) : 0;
-	uint8_t* core = n ? malloc(n) : NULL;
-	ok = core && vf->seek(vf, 0, SEEK_SET) == 0 && vf->read(vf, core, n) == (ssize_t) n;
-	vf->close(vf);
-	uint8_t* out = core;
-	size_t outN = n;
-	if (ok && fmt != STATE_FORMAT_MGBA) ok = (out = retroarch_wrap(core, n, fmt == STATE_FORMAT_RETROARCH_RZIP, &outN)) != NULL;
-	if (ok) ok = write_whole(path, out, outN);
-	if (out != core) free(out);
-	free(core);
+	card_write(s);
+	char tmp[1100];
+	snprintf(tmp, sizeof tmp, "%s.new", path);
+	FILE* f = fopen(tmp, "wb");
+	bool ok = f != NULL;
+	if (f) {
+		uint32_t hdr[2] = { (uint32_t)(extra ? extraN : 0), e->romCrc };
+		ok = fwrite(STATE_MAGIC, 1, 8, f) == 8 && fwrite(hdr, 4, 2, f) == 2;
+		if (ok && extra && extraN) ok = fwrite(extra, 1, extraN, f) == extraN;
+		if (ok) ok = fwrite(buf, 1, n, f) == n;
+		ok = fclose(f) == 0 && ok;
+	}
+	free(buf);
+	if (ok) ok = rename(tmp, path) == 0;
+	else unlink(tmp);
 	return ok;
 }
 
-bool emu_state_save_file(Emu* e, const char* path) {
-	return emu_state_save_file_as(e, path, NULL, 0, STATE_FORMAT_MGBA);
+bool emu_state_save_file(Emu* e, const char* path) { return emu_state_save_file_as(e, path, NULL, 0, STATE_FORMAT_MGBA); }
+
+/* reads a state file's header; returns the open file at the core's state, or NULL */
+static FILE* state_open(const char* path, uint32_t* extraN, uint32_t* crc) {
+	FILE* f = fopen(path, "rb");
+	if (!f) return NULL;
+	char magic[8];
+	uint32_t hdr[2];
+	if (fread(magic, 1, 8, f) != 8 || memcmp(magic, STATE_MAGIC, 8) != 0 || fread(hdr, 4, 2, f) != 2) {
+		fclose(f);
+		return NULL;
+	}
+	if (extraN) *extraN = hdr[0];
+	if (crc) *crc = hdr[1];
+	return f;
 }
 
 bool emu_state_load_file(Emu* e, const char* path) {
-	size_t n;
-	StateFileKind kind;
-	uint8_t* b = state_file_read(path, &n, &kind);
-	if (!b) return false;
-	bool ok = false;
-	if (kind == STATE_FILE_MGBA || kind == STATE_FILE_RETROARCH) {
-		struct VFile* vf = VFileFromConstMemory(b, n);
-		if (vf) {
-			ok = mCoreLoadStateNamed(e->core, vf, SAVESTATE_RTC);
-			rtc_pin(e);
-			vf->close(vf);
-		}
-		split_resync(e);
-	}
-	free(b);
+	Slot* s = S(e);
+	uint32_t extraN;
+	FILE* f = s ? state_open(path, &extraN, NULL) : NULL;
+	if (!f) return false;
+	size_t n = s->serialize_size();
+	void* buf = malloc(n);
+	bool ok = buf && fseek(f, extraN, SEEK_CUR) == 0 && fread(buf, 1, n, f) == n && s->unserialize(buf, n);
+	fclose(f);
+	free(buf);
 	return ok;
 }
 
 StateFileKind emu_state_file_kind(Emu* e, const char* path, bool* fromGbads) {
+	(void)e;
 	if (fromGbads) *fromGbads = false;
-	size_t n;
-	StateFileKind kind;
-	uint8_t* b = state_file_read(path, &n, &kind);
-	if (b && fromGbads && e && (kind == STATE_FILE_MGBA || kind == STATE_FILE_RETROARCH)) {
-		struct VFile* vf = VFileFromConstMemory(b, n);
-		struct mStateExtdata ext;
-		mStateExtdataInit(&ext);
-		struct mStateExtdataItem item;
-		/* (Get says yes for a tag that isn't there too: its size says) */
-		if (vf && mCoreExtractExtdata(e->core, vf, &ext) && mStateExtdataGet(&ext, EXTDATA_GBADS, &item) && item.size > 0 && item.data)
-			*fromGbads = true;
-		mStateExtdataDeinit(&ext);
-		if (vf) vf->close(vf);
-	}
-	free(b);
-	return kind;
+	struct stat st;
+	if (stat(path, &st) != 0) return STATE_FILE_NONE;
+	uint32_t extraN;
+	FILE* f = state_open(path, &extraN, NULL);
+	if (!f) return STATE_FILE_OTHER_CORE;
+	fclose(f);
+	if (fromGbads) *fromGbads = extraN > 0;
+	return STATE_FILE_MGBA;
 }
 
 bool emu_state_file_rom_crc(const char* path, uint32_t* crc) {
-	size_t n;
-	StateFileKind kind;
-	uint8_t* h = state_file_read(path, &n, &kind);
-	/* GBASerializedState: versionMagic (0x01000000 + version), biosChecksum, romCrc32 */
-	bool ok = h && is_mgba_state(h, n);
-	if (ok) *crc = le32(h + 8);
-	free(h);
-	return ok;
+	FILE* f = state_open(path, NULL, crc);
+	if (!f) return false;
+	fclose(f);
+	return true;
 }
 
 void* emu_state_file_get_extra(Emu* e, const char* path, size_t* n) {
-	*n = 0;
-	size_t bn;
-	StateFileKind kind;
-	uint8_t* b = state_file_read(path, &bn, &kind);
-	struct VFile* vf = b ? VFileFromConstMemory(b, bn) : NULL;
-	if (!vf) {
-		free(b);
-		return NULL;
+	(void)e;
+	uint32_t extraN;
+	FILE* f = state_open(path, &extraN, NULL);
+	if (!f) return NULL;
+	void* buf = extraN ? malloc(extraN) : NULL;
+	if (buf && fread(buf, 1, extraN, f) != extraN) {
+		free(buf);
+		buf = NULL;
 	}
-	struct mStateExtdata ext;
-	mStateExtdataInit(&ext);
-	void* out = NULL;
-	struct mStateExtdataItem item;
-	if (mCoreExtractExtdata(e->core, vf, &ext) && mStateExtdataGet(&ext, EXTDATA_GBADS, &item) && item.size > 0 && item.data) {
-		out = malloc((size_t) item.size);
-		if (out) memcpy(out, item.data, (size_t) item.size), *n = (size_t) item.size;
-	}
-	mStateExtdataDeinit(&ext);
-	vf->close(vf);
-	free(b);
-	return out;
-}
-
-uint8_t emu_read8(Emu* e, uint32_t a) {
-	return e->core->rawRead8(e->core, a, -1);
-}
-void emu_write8(Emu* e, uint32_t a, uint8_t v) {
-	e->core->rawWrite8(e->core, a, -1, v);
-}
-void emu_write16(Emu* e, uint32_t a, uint16_t v) {
-	e->core->rawWrite16(e->core, a, -1, v);
-}
-void emu_write32(Emu* e, uint32_t a, uint32_t v) {
-	e->core->rawWrite32(e->core, a, -1, v);
-}
-uint16_t emu_read16(Emu* e, uint32_t a) {
-	return e->core->rawRead16(e->core, a, -1);
-}
-uint32_t emu_read32(Emu* e, uint32_t a) {
-	return e->core->rawRead32(e->core, a, -1);
-}
-
-static bool has_ext(const char* name, const char* const* exts) {
-	const char* dot = strrchr(name, '.');
-	if (!dot) return false;
-	for (int i = 0; exts[i]; ++i) {
-		if (!strcasecmp(dot, exts[i])) return true;
-	}
-	return false;
-}
-
-bool emu_is_archive_name(const char* name) {
-	static const char* const exts[] = { ".zip", ".7z", NULL };
-	return has_ext(name, exts);
-}
-
-bool emu_is_rom_name(const char* name) {
-	static const char* const exts[] = { ".gba", ".zip", ".7z", NULL };
-	return has_ext(name, exts);
-}
-
-bool emu_rom_header(const char* path, uint8_t* out, size_t n) {
-	if (n > 0xC0) n = 0xC0;
-	struct VDir* archive = emu_is_archive_name(path) ? VDirOpenArchive(path) : NULL;
-	struct VFile* vf = archive ? VDirFindFirst(archive, GBAIsROM) : VFileOpen(path, O_RDONLY);
-	bool ok = false;
-	if (vf) {
-		ok = vf->seek(vf, 0, SEEK_SET) == 0 && vf->read(vf, out, n) == (ssize_t) n;
-		vf->close(vf);
-	}
-	if (archive) archive->close(archive);
-	return ok;
-}
-
-uint8_t* emu_rom_read_all(const char* path, size_t* size) {
-	struct VDir* archive = emu_is_archive_name(path) ? VDirOpenArchive(path) : NULL;
-	struct VFile* vf = archive ? VDirFindFirst(archive, GBAIsROM) : VFileOpen(path, O_RDONLY);
-	uint8_t* buf = NULL;
-	if (vf) {
-		ssize_t n = vf->size(vf);
-		if (n > 0 && n <= 64 * 1024 * 1024 && (buf = malloc((size_t) n))) {
-			if (vf->seek(vf, 0, SEEK_SET) != 0 || vf->read(vf, buf, (size_t) n) != n) {
-				free(buf);
-				buf = NULL;
-			} else {
-				*size = (size_t) n;
-			}
-		}
-		vf->close(vf);
-	}
-	if (archive) archive->close(archive);
+	fclose(f);
+	if (buf) *n = extraN;
 	return buf;
 }
 
+/* --- memory -------------------------------------------------------------------------- */
+
+/* region: 0 the PS1's main RAM (2 MB), 0xE the memory card */
 uint8_t* emu_memory(Emu* e, int region, size_t* size) {
-	size_t n = 0;
-	uint8_t* p = e->core ? e->core->getMemoryBlock(e->core, (size_t) region, &n) : NULL;
-	*size = p ? n : 0;
-	return p;
+	Slot* s = S(e);
+	if (!s) return NULL;
+	unsigned id = region == 0xE ? RETRO_MEMORY_SAVE_RAM : RETRO_MEMORY_SYSTEM_RAM;
+	if (region != 0 && region != 0xE) return NULL;
+	*size = s->get_memory_size(id);
+	return s->get_memory_data(id);
 }
+
+/* PS1 addresses: main RAM through any of its mirrors (0x00..., 0x80...,
+ * 0xA0...); anything else reads 0 */
+static uint8_t* ram_at(Emu* e, uint32_t addr, size_t len) {
+	if ((addr & 0x1F000000u) != 0) return NULL;
+	size_t n;
+	uint8_t* ram = emu_memory(e, 0, &n);
+	uint32_t off = addr & 0x1FFFFFu;
+	if (!ram || off + len > n) return NULL;
+	return ram + off;
+}
+
+uint8_t emu_read8(Emu* e, uint32_t addr) { uint8_t* p = ram_at(e, addr, 1); return p ? *p : 0; }
+uint16_t emu_read16(Emu* e, uint32_t addr) { uint8_t* p = ram_at(e, addr, 2); uint16_t v = 0; if (p) memcpy(&v, p, 2); return v; }
+uint32_t emu_read32(Emu* e, uint32_t addr) { uint8_t* p = ram_at(e, addr, 4); uint32_t v = 0; if (p) memcpy(&v, p, 4); return v; }
+void emu_write8(Emu* e, uint32_t addr, uint8_t value) { uint8_t* p = ram_at(e, addr, 1); if (p) *p = value; }
+void emu_write16(Emu* e, uint32_t addr, uint16_t value) { uint8_t* p = ram_at(e, addr, 2); if (p) memcpy(p, &value, 2); }
+void emu_write32(Emu* e, uint32_t addr, uint32_t value) { uint8_t* p = ram_at(e, addr, 4); if (p) memcpy(p, &value, 4); }
+
+/* --- sound ------------------------------------------------------------------------------ */
 
 size_t emu_audio_read(Emu* e, int16_t* out, size_t maxFrames) {
-	struct mAudioBuffer* ab = e->core->getAudioBuffer(e->core);
-	if (!ab) {
-		return 0;
+	Slot* s = S(e);
+	if (!s || !s->ring) return 0;
+	pthread_mutex_lock(&s->audioLock);
+	size_t n = s->ringCount < maxFrames ? s->ringCount : maxFrames;
+	for (size_t f = 0; f < n; f++) {
+		size_t at = (s->ringHead + f) % AUDIO_RING;
+		out[f * 2] = s->ring[at * 2];
+		out[f * 2 + 1] = s->ring[at * 2 + 1];
 	}
-	return mAudioBufferRead(ab, out, maxFrames);
+	s->ringHead = (s->ringHead + n) % AUDIO_RING;
+	s->ringCount -= n;
+	pthread_mutex_unlock(&s->audioLock);
+	return n;
 }
 
-unsigned emu_audio_rate(Emu* e) {
-	return e->core->audioSampleRate(e->core);
-}
+unsigned emu_audio_rate(Emu* e) { return S(e) ? S(e)->rate : 44100; }
 
-/* ------------------------------------------------------------ sprite hiding */
+/* --- cheats ----------------------------------------------------------------------------- */
 
-/* Rules per renderer: the game core hides the Metroid HUD mini-map, the map
- * capture core (another thread) hides prompts drawn over the map. */
-typedef struct {
-	struct GBAVideoRenderer* renderer;
-	void (*orig)(struct GBAVideoRenderer* renderer, int y);
-	SpriteRule rules[12];
-	int n;
-	bool keepOnly; /* hide every sprite that matches none of the rules instead */
-	uint16_t exact[128][3]; /* and sprites exactly like these (emu_hide_exact) */
-	int nExact;
-	bool exactKeep; /* the exact ones are kept instead (emu_hud_keep_exact) */
-	bool grouped; /* a matching sprite is hidden only as part of a group
-	               * (emu_hide_grouped) */
-} HideSlot;
-static HideSlot hideSlots[8];
-static pthread_mutex_t hideLock = PTHREAD_MUTEX_INITIALIZER;
-
-static HideSlot* slot_for(struct GBAVideoRenderer* r) {
-	for (int i = 0; i < 8; ++i) {
-		if (hideSlots[i].renderer == r) return &hideSlots[i];
-	}
-	return NULL;
-}
-
-static bool hidden(const HideSlot* s, const struct GBAObj* obj) {
-	int x = (int) (GBAObjAttributesBGetX(obj->b) << 23) >> 23;
-	int y = GBAObjAttributesAGetY(obj->a);
-	if (y >= 160) y -= 256;
-	int tile = GBAObjAttributesCGetTile(obj->c);
-	int prio = GBAObjAttributesCGetPriority(obj->c);
-	int pal = GBAObjAttributesCGetPalette(obj->c);
-	for (int i = 0; i < s->nExact; ++i) {
-		if (s->exact[i][0] == obj->a && s->exact[i][1] == obj->b && s->exact[i][2] == obj->c) return !s->exactKeep;
-	}
-	for (int i = 0; i < s->n; ++i) {
-		const SpriteRule* r = &s->rules[i];
-		if (x >= r->x0 && x <= r->x1 && y >= r->y0 && y <= r->y1 && tile >= r->tileMin && tile <= r->tileMax &&
-		    (r->prio < 0 || prio == r->prio) && (!r->palMask || (r->palMask >> pal & 1)) &&
-		    (!r->tagged || (!GBAObjAttributesAIsTransformed(obj->a) && (obj->b & r->tagged))) &&
-		    (!r->shapes || (r->shapes >> (GBAObjAttributesAGetShape(obj->a) * 4 + GBAObjAttributesBGetSize(obj->b)) & 1))) {
-			return !s->keepOnly;
-		}
-	}
-	return s->keepOnly;
-}
-
-/* emu_hide_grouped: of the sprites that match the rules, only those that are
- * part of the run of matching sprites at the start of the sprite table, or
- * whose run of sprites in one palette (one after another in the table)
- * matches the rules throughout, are hidden. Sprites wholly off the screen's
- * sides are passed over (they draw nothing). Lady Sia: the game puts its
- * HUD first (level 2 puts Sia among it, in her own palette), and a level's
- * thing is several sprites in one palette, some of which pass a HUD
- * piece's place with its shape (the first village's well). */
-static bool groupHide[128];
-static void hide_grouped(const HideSlot* s, const struct GBAVideoRendererSprite* sp, int n) {
-	bool match[128], shown[128];
-	if (n > 128) n = 128;
-	for (int i = 0; i < n; ++i) {
-		const struct GBAObj* o = &sp[i].obj;
-		int x = (int) (GBAObjAttributesBGetX(o->b) << 23) >> 23;
-		int w = GBAVideoObjSizes[GBAObjAttributesAGetShape(o->a) * 4 + GBAObjAttributesBGetSize(o->b)][0];
-		if (GBAObjAttributesAIsTransformed(o->a)) w <<= GBAObjAttributesAGetDoubleSize(o->a);
-		shown[i] = x < GBA_W && x + w > 0;
-		match[i] = hidden(s, o);
-		groupHide[i] = false;
-	}
-	/* the run at the start */
-	for (int i = 0; i < n; ++i) {
-		if (!shown[i]) continue;
-		if (!match[i]) break;
-		groupHide[i] = true;
-	}
-	/* runs in one palette */
-	for (int i = 0; i < n;) {
-		if (!shown[i]) {
-			++i;
-			continue;
-		}
-		int pal = GBAObjAttributesCGetPalette(sp[i].obj.c), j = i, end = i;
-		bool all = true;
-		for (; j < n; ++j) {
-			if (!shown[j]) continue;
-			if (GBAObjAttributesCGetPalette(sp[j].obj.c) != pal) break;
-			all = all && match[j];
-			end = j;
-		}
-		for (int k = i; k <= end; ++k) {
-			if (shown[k] && all) groupHide[k] = true;
-		}
-		i = j;
-	}
-}
-
-/* Runs before the software renderer's own scanline code: when the sprite table
- * has changed, build the renderer's sprite list the way it would, minus the
- * hidden sprites, and mark it clean so the renderer uses ours. */
-static void filtered_draw_scanline(struct GBAVideoRenderer* renderer, int y) {
-	struct GBAVideoSoftwareRenderer* sw = (struct GBAVideoSoftwareRenderer*) renderer;
-	HideSlot* s = slot_for(renderer);
-	if (!s) return;
-	if ((s->n || s->keepOnly || s->nExact) && sw->oamDirty) {
-		int n = GBAVideoRendererCleanOAM(sw->d.oam->obj, sw->sprites, sw->objOffsetY);
-		int kept = 0;
-		if (s->grouped && !s->keepOnly) {
-			hide_grouped(s, sw->sprites, n);
-			for (int i = 0; i < n; ++i) {
-				if (!groupHide[i]) sw->sprites[kept++] = sw->sprites[i];
-			}
-		} else {
-			for (int i = 0; i < n; ++i) {
-				if (!hidden(s, &sw->sprites[i].obj)) sw->sprites[kept++] = sw->sprites[i];
-			}
-		}
-		sw->oamMax = kept;
-		sw->oamDirty = false;
-	}
-	s->orig(renderer, y);
-}
-
-void emu_hide_exact(Emu* e, const uint16_t (*attrs)[3], int n) {
-	struct GBA* gba = e->core->board;
-	struct GBAVideoRenderer* r = gba->video.renderer;
-	if (!r) return;
-	pthread_mutex_lock(&hideLock);
-	HideSlot* s = slot_for(r);
-	if (!s && (s = slot_for(NULL))) {
-		s->n = 0, s->keepOnly = false;
-		s->orig = r->drawScanline;
-		s->renderer = r;
-		r->drawScanline = filtered_draw_scanline;
-	}
-	if (s) {
-		s->nExact = n > 128 ? 128 : n;
-		s->exactKeep = false;
-		if (s->nExact) memcpy(s->exact, attrs, sizeof(*attrs) * s->nExact);
-	}
-	pthread_mutex_unlock(&hideLock);
-	((struct GBAVideoSoftwareRenderer*) r)->oamDirty = true;
-}
-
-void emu_hide_sprites(Emu* e, const SpriteRule* rules, int n) {
-	struct GBA* gba = e->core->board;
-	struct GBAVideoRenderer* r = gba->video.renderer;
-	if (!r) return;
-	pthread_mutex_lock(&hideLock);
-	HideSlot* s = slot_for(r);
-	if (!s) s = slot_for(NULL);
-	if (s) {
-		s->n = n > 12 ? 12 : n;
-		if (s->n) memcpy(s->rules, rules, sizeof(*rules) * s->n);
-		if (s->renderer != r) {
-			s->orig = r->drawScanline;
-			s->renderer = r;
-			r->drawScanline = filtered_draw_scanline;
-		}
-	}
-	pthread_mutex_unlock(&hideLock);
-	((struct GBAVideoSoftwareRenderer*) r)->oamDirty = true;
-}
-
-/* The sprites the rules match are hidden only in groups (hide_grouped).
- * Kept until the game closes. */
-void emu_hide_grouped(Emu* e, bool on) {
-	struct GBA* gba = e->core->board;
-	struct GBAVideoRenderer* r = gba->video.renderer;
-	if (!r) return;
-	pthread_mutex_lock(&hideLock);
-	HideSlot* s = slot_for(r);
-	if (s) s->grouped = on;
-	pthread_mutex_unlock(&hideLock);
-	((struct GBAVideoSoftwareRenderer*) r)->oamDirty = true;
-}
-
-/* The opposite of emu_hide_sprites: only the sprites that match one of the
- * rules are drawn (Lady Sia's pause screen, captured without what the
- * level left in the sprite table). */
-void emu_keep_sprites(Emu* e, const SpriteRule* rules, int n) {
-	emu_hide_sprites(e, rules, n);
-	struct GBA* gba = e->core->board;
-	struct GBAVideoRenderer* r = gba->video.renderer;
-	if (!r) return;
-	pthread_mutex_lock(&hideLock);
-	HideSlot* s = slot_for(r);
-	if (s) s->keepOnly = n > 0;
-	pthread_mutex_unlock(&hideLock);
-	((struct GBAVideoSoftwareRenderer*) r)->oamDirty = true;
-}
-
-void emu_layers(Emu* e, unsigned mask) {
-	for (int i = 0; i < 5; ++i) e->core->enableVideoLayer(e->core, i, (mask >> i) & 1);
-}
-
-static void hide_release(Emu* e) {
-	struct GBA* gba = e->core->board;
-	pthread_mutex_lock(&hideLock);
-	HideSlot* s = slot_for(gba->video.renderer);
-	if (s) memset(s, 0, sizeof(*s));
-	pthread_mutex_unlock(&hideLock);
-}
-
-/* ---------------------------------------------------------------- HUD split
- *
- * A second software renderer that gets every register, palette and sprite
- * write the game's own renderer gets, and draws only the HUD (some BG
- * layers and sprites of one priority) into its own buffer, on black. While
- * it's on, the game's renderer leaves those out. Each renderer keeps its
- * own per-line state (affine counters, sprite lists), so the track's
- * per-line effects are unaffected. */
-/* The 'no HUD pixel' colour: nearly black (red 1, blue 1 of 31), which
- * games don't use, so a HUD layer blended with it (a half-transparent
- * panel, a banner fading in) comes out as if over black, and one blended
- * away entirely (alpha 0) comes out as this colour, nothing. */
-#define HUD_CLEAR_555 0x0401
-
-typedef struct {
-	struct GBAVideoSoftwareRenderer hud;
-	struct GBAVideoRenderer* main;
-	bool installed, active;
-	unsigned bgMask;
-	SpriteRule objs[12];
-	int nObjs;
-	int nKeep; /* sprites the HUD also draws by their exact attributes (emu_hud_keep_exact) */
-	/* one frame of other layers instead (emu_hud_grab) */
-	uint32_t* grabBuf;
-	unsigned grabMask;
-	uint16_t grabCnt; /* instead of grabMask: the BG with this BGxCNT then */
-	/* the HUD's layers by priority, taken as each frame starts (0: bgMask) */
-	int prioBelow;
-	unsigned keepBgs; /* never in the HUD (emu_hud_keep_bgs) */
-	/* emu_hud_mem_layers: memory checked as each frame starts drawing */
-	unsigned baseMask, memLayers;
-	uint32_t memAddr[2], memMask[2], memVal[2];
-	int memSize[2], memN;
-	bool memAny; /* any one of them holds, instead of every one */
-	int memGamePal; /* palette + 1: their lines with a tile of it stay on the game (0: none) */
-	unsigned memLineOff; /* memLayers left out of the HUD on this line, for that */
-	/* emu_hud_band: lines where a BG has one of these BGxCNT values */
-	unsigned lineHud, lineGame; /* this line's HUD layers / layers left out of the game */
-	int bandY0, bandY1;         /* this frame's band lines so far (y1 < y0: none) */
-	struct GBA* gba;
-	bool grabbing, grabbed;
-	uint32_t* hudBuf;
-	uint16_t (*writeVideoRegister)(struct GBAVideoRenderer*, uint32_t, uint16_t);
-	void (*writeVRAM)(struct GBAVideoRenderer*, uint32_t);
-	void (*writePalette)(struct GBAVideoRenderer*, uint32_t, uint16_t);
-	void (*writeOAM)(struct GBAVideoRenderer*, uint32_t);
-	void (*drawScanline)(struct GBAVideoRenderer*, int);
-	void (*finishFrame)(struct GBAVideoRenderer*);
-	void (*reset)(struct GBAVideoRenderer*);
-} Split;
-static Split split;
-/* emu_hud_game_reg (kept across installs) */
-static uint32_t gameRegAddr;
-static uint16_t gameRegBits;
-/* emu_hud_band (kept across installs) */
-static bool bandOn, bandCopy, bandWatch;
-static int lastBandY0, lastBandY1 = -1;
-static uint16_t bandNormal[4]; /* each BG's BGxCNT on the lines outside the band (0: not seen yet) */
-
-static void filtered_draw_scanline(struct GBAVideoRenderer* renderer, int y);
-
-/* The HUD renderer's backdrop must stay exactly the 'nothing here' colour:
- * no brightening or darkening of it (BLDCNT's backdrop first target; Super
- * Mario Advance 2 darkens the bottom rows a little more each line). */
-static uint16_t hud_reg(uint32_t a, uint16_t v) {
-	return a == 0x50 ? v & ~0x0020 : v;
-}
-static uint16_t split_reg(struct GBAVideoRenderer* r, uint32_t a, uint16_t v) {
-	uint16_t out;
-	if (split.active && gameRegBits && a == gameRegAddr) {
-		/* both renderers without those bits; the register keeps them */
-		out = split.writeVideoRegister(r, a, v & ~gameRegBits) | (v & gameRegBits);
-		split.hud.d.writeVideoRegister(&split.hud.d, a, hud_reg(a, v & ~gameRegBits));
-	} else {
-		out = split.writeVideoRegister(r, a, v);
-		split.hud.d.writeVideoRegister(&split.hud.d, a, hud_reg(a, v));
-	}
-	return out;
-}
-static void split_vram(struct GBAVideoRenderer* r, uint32_t a) {
-	split.writeVRAM(r, a);
-	split.hud.d.writeVRAM(&split.hud.d, a);
-}
-static void split_palette(struct GBAVideoRenderer* r, uint32_t a, uint16_t v) {
-	split.writePalette(r, a, v);
-	split.hud.d.writePalette(&split.hud.d, a, a == 0 ? HUD_CLEAR_555 : v); /* backdrop: the 'nothing here' colour */
-}
-static void split_oam(struct GBAVideoRenderer* r, uint32_t i) {
-	split.writeOAM(r, i);
-	split.hud.d.writeOAM(&split.hud.d, i);
-}
-static void split_layers(unsigned bgMask, bool obj) {
-	for (int i = 0; i < 4; ++i) split.hud.d.disableBG[i] = !((bgMask >> i) & 1);
-	split.hud.d.disableOBJ = !obj;
-}
-/* The BG layers with this BGxCNT value / at a priority below p, as the
- * registers are now. */
-static unsigned bgs_with_cnt(uint16_t cnt) {
-	unsigned m = 0;
-	for (int i = 0; i < 4; ++i) m |= (unsigned) (split.gba->memory.io[(0x08 >> 1) + i] == cnt) << i;
-	return m;
-}
-static unsigned bgs_below(int p) {
-	unsigned m = 0;
-	for (int i = 0; i < 4; ++i) m |= (unsigned) ((split.gba->memory.io[(0x08 >> 1) + i] & 3) < p) << i;
-	return m;
-}
-
-/* a byte, halfword or word of EWRAM, IWRAM or the I/O registers, as the
- * game has it now (0 elsewhere) */
-static uint32_t split_read(uint32_t a, int size) {
-	const struct GBA* g = split.gba;
-	const uint8_t* p;
-	switch (a >> 24) {
-	case 2: p = (const uint8_t*) g->memory.wram + (a & 0x3FFFF); break;
-	case 3: p = (const uint8_t*) g->memory.iwram + (a & 0x7FFF); break;
-	case 4: p = (const uint8_t*) g->memory.io + (a & 0x3FF); break;
-	case 6: p = (const uint8_t*) g->video.vram + ((a & 0x1FFFF) < 0x18000 ? a & 0x1FFFF : (a & 0x1FFFF) - 0x8000); break; /* (the tile maps: Mario & Luigi's boxes) */
-	default: return 0;
-	}
-	uint32_t v = 0;
-	memcpy(&v, p, size == 1 || size == 2 ? size : 4);
-	return v;
-}
-
-/* Whether text BG `bg`'s map, as the registers are now, has a tile in
- * palette `pal` on screen line `y` (any column on screen; mode 0, or BG0-1
- * in mode 1) */
-static bool bg_line_has_pal(int bg, int y, int pal) {
-	const uint16_t* io = split.gba->memory.io;
-	int mode = io[0] & 7;
-	if (mode > 1 || (mode == 1 && bg > 1)) return false;
-	uint16_t cnt = io[(0x08 >> 1) + bg];
-	int hofs = io[(0x10 >> 1) + bg * 2] & 0x1FF, vofs = io[(0x12 >> 1) + bg * 2] & 0x1FF;
-	int size = cnt >> 14, sb = (cnt >> 8) & 0x1F;
-	int wide = size & 1, tall = size >> 1;
-	int ty = ((y + vofs) >> 3) & (tall ? 63 : 31);
-	const uint16_t* vram = split.gba->video.vram;
-	for (int c = 0; c < GBA_W / 8 + 1; ++c) {
-		int tx = ((hofs >> 3) + c) & (wide ? 63 : 31);
-		int block = sb + (tx >> 5) + ((ty >> 5) << wide);
-		uint16_t e = vram[block * 0x400 + (ty & 31) * 32 + (tx & 31)];
-		if ((e & 0x3FF) && (e >> 12) == pal) return true;
-	}
-	return false;
-}
-
-static int copyAbove; /* emu_hud_copy_above */
-static int splitRows; /* emu_hud_rows */
-static bool splitCopying; /* emu_hud_copy: the HUD's layers left on the game too */
-
-static void split_draw(struct GBAVideoRenderer* r, int y) {
-	if (split.active && copyAbove) {
-		bool off = y >= copyAbove;
-		for (int i = 0; i < 4; ++i) {
-			if ((split.bgMask >> i) & 1) r->disableBG[i] = off;
-		}
-	}
-	if (split.active && splitRows && !splitCopying) {
-		/* the HUD's layers leave the game only on its rows; below, the
-		 * game draws them as it does, behind or in front of the rest */
-		bool off = y < splitRows;
-		for (int i = 0; i < 4; ++i) {
-			if ((split.bgMask >> i) & 1) r->disableBG[i] = off;
-		}
-	}
-	if (split.active) {
-		if (split.prioBelow) {
-			/* the game moves its map and menus between layers (between
-			 * frames and, as a panel slides, between lines): pick them for
-			 * each line as it's drawn */
-			unsigned m = bgs_below(split.prioBelow) & ~split.keepBgs;
-			if (m != split.bgMask) {
-				split.bgMask = m;
-				for (int i = 0; i < 4; ++i) r->disableBG[i] = (m >> i) & 1;
-				if (!split.grabbing) split_layers(m, split.nObjs > 0 || split.nKeep > 0);
-			}
-		}
-		if (y == 0 && split.memN) {
-			/* emu_hud_mem_layers: decided as the frame starts drawing, after
-			 * the game's vblank code has run (it sets the flag and draws what
-			 * goes with it in the same vblank) */
-			bool match = !split.memAny;
-			for (int i = 0; i < split.memN && match != split.memAny; ++i) match = (split_read(split.memAddr[i], split.memSize[i]) & split.memMask[i]) == split.memVal[i];
-			unsigned m = split.baseMask | (match ? split.memLayers : 0);
-			if (m != split.bgMask) {
-				split.bgMask = split.lineHud = split.lineGame = m;
-				for (int i = 0; i < 4; ++i) r->disableBG[i] = (m >> i) & 1;
-				if (!split.grabbing) split_layers(m, split.nObjs > 0 || split.nKeep > 0);
-			}
-		}
-		if (split.memGamePal) {
-			/* emu_hud_mem_layers' gamePal: on a line where one of those
-			 * layers has a tile in that palette (Mario & Luigi's speech
-			 * balloons, beside the boxes' text in another), the layer stays
-			 * on the game there and is left out of the HUD (ML-5) */
-			unsigned off = 0;
-			for (int i = 0; i < 4; ++i) {
-				if (((split.memLayers & split.bgMask) >> i) & 1 && bg_line_has_pal(i, y, split.memGamePal - 1)) off |= 1u << i;
-			}
-			if (y == 0 || off != split.memLineOff) {
-				for (int i = 0; i < 4; ++i) {
-					if ((split.memLayers >> i) & 1) r->disableBG[i] = ((split.bgMask & ~off) >> i) & 1;
-				}
-				if (!split.grabbing) split_layers(split.bgMask & ~off, split.nObjs > 0 || split.nKeep > 0);
-				split.memLineOff = off;
-			}
-		}
-		if (y == 0 && split.grabBuf) {
-			if (split.grabCnt) split.grabMask = bgs_with_cnt(split.grabCnt);
-			/* this frame: the grab layers into grabBuf, no sprites */
-			split.grabbing = true;
-			split.hud.outputBuffer = (mColor*) split.grabBuf;
-			split_layers(split.grabMask, false);
-		}
-		if (bandOn && !split.prioBelow) {
-			/* the band: lines with sprites off (the rest of the screen has
-			 * them on) where layers are set up differently from elsewhere:
-			 * those layers go into the HUD, and out of the game unless
-			 * they're copied. Not when last frame's band was most of the
-			 * screen (a full-screen scene, not a box). */
-			const uint16_t* io = split.gba->memory.io;
-			unsigned band = 0;
-			static bool inBand;
-			static int tail; /* lines of the box with the sprites back on */
-			if (y == 0) split.bandY0 = GBA_H, split.bandY1 = -1, inBand = false;
-			unsigned differs = 0;
-			for (int i = 0; i < 4; ++i) {
-				if (((io[0] >> (8 + i)) & 1) && bandNormal[i] && io[(0x08 >> 1) + i] != bandNormal[i]) differs |= 1u << i;
-			}
-			/* (the box's last few lines can have the sprites back on already) */
-			if (!(io[0] & 0x1000)) inBand = true, tail = 0;
-			else inBand = inBand && differs && ++tail <= 8;
-			if (!inBand) {
-				for (int i = 0; i < 4; ++i) bandNormal[i] = io[(0x08 >> 1) + i];
-			} else {
-				if (lastBandY1 - lastBandY0 < 100 && !bandWatch) band = differs;
-				split.bandY0 = y < split.bandY0 ? y : split.bandY0, split.bandY1 = y;
-			}
-			unsigned hud = split.bgMask | band, game = split.bgMask | (bandCopy ? 0 : band);
-			if (game != split.lineGame) {
-				split.lineGame = game;
-				for (int i = 0; i < 4; ++i) r->disableBG[i] = (game >> i) & 1;
-			}
-			if (hud != split.lineHud) {
-				split.lineHud = hud;
-				if (!split.grabbing) split_layers(hud, split.nObjs > 0 || split.nKeep > 0);
-			}
-		}
-		filtered_draw_scanline(&split.hud.d, y);
-	}
-	split.drawScanline(r, y);
-}
-static void split_finish(struct GBAVideoRenderer* r) {
-	if (split.active && bandOn) lastBandY0 = split.bandY0, lastBandY1 = split.bandY1;
-	split.finishFrame(r);
-	split.hud.d.finishFrame(&split.hud.d);
-	if (split.grabbing) {
-		split.grabbing = false;
-		split.grabBuf = NULL;
-		split.grabbed = true;
-		split.hud.outputBuffer = (mColor*) split.hudBuf;
-		split_layers(split.bgMask, split.nObjs > 0 || split.nKeep > 0);
-	}
-}
-static void split_reset(struct GBAVideoRenderer* r) {
-	split.reset(r);
-	split.hud.d.reset(&split.hud.d);
-}
-
-/* the HUD renderer takes on the video state as it is now */
-static void split_resync(Emu* e) {
-	struct GBA* gba = e->core->board;
-	if (!split.installed || gba->video.renderer != split.main) return; /* another core (logo, map capture) */
-	struct GBAVideoRenderer* h = &split.hud.d;
-	h->reset(h);
-	for (uint32_t a = 0; a <= 0x56; a += 2) h->writeVideoRegister(h, a, hud_reg(a, gba->memory.io[a >> 1]));
-	for (uint32_t a = 0; a < 0x400; a += 2) h->writePalette(h, a, a == 0 ? HUD_CLEAR_555 : gba->video.palette[a >> 1]);
-	for (uint32_t i = 0; i < 512; ++i) h->writeOAM(h, i);
-	split.hud.oamDirty = true;
-}
-
-static void split_release(Emu* e) {
-	struct GBA* gba = e->core->board;
-	if (!split.installed || gba->video.renderer != split.main) return; /* another core (logo, map capture) */
-	pthread_mutex_lock(&hideLock);
-	HideSlot* s = slot_for(&split.hud.d);
-	if (s) memset(s, 0, sizeof(*s));
-	pthread_mutex_unlock(&hideLock);
-	split.hud.d.deinit(&split.hud.d);
-	memset(&split, 0, sizeof(split));
-}
-
-bool emu_hud_split(Emu* e, bool on, unsigned bgMask, const SpriteRule* objs, int nObjs, uint32_t* hud) {
-	struct GBA* gba = e->core->board;
-	struct GBAVideoRenderer* r = gba->video.renderer;
-	if (!r) return false;
-	if (!split.installed) {
-		if (!on) return true;
-		memset(&split, 0, sizeof(split));
-		GBAVideoSoftwareRendererCreate(&split.hud);
-		split.hud.outputBuffer = (mColor*) hud;
-		split.hudBuf = hud;
-		split.hud.outputBufferStride = GBA_W;
-		struct GBAVideoRenderer* h = &split.hud.d;
-		h->palette = gba->video.palette;
-		h->vram = gba->video.vram;
-		h->oam = &gba->video.oam;
-		h->cache = NULL;
-		h->init(h);
-		split.main = r;
-		split.gba = gba;
-		split.writeVideoRegister = r->writeVideoRegister, r->writeVideoRegister = split_reg;
-		split.writeVRAM = r->writeVRAM, r->writeVRAM = split_vram;
-		split.writePalette = r->writePalette, r->writePalette = split_palette;
-		split.writeOAM = r->writeOAM, r->writeOAM = split_oam;
-		split.drawScanline = r->drawScanline, r->drawScanline = split_draw;
-		split.finishFrame = r->finishFrame, r->finishFrame = split_finish;
-		split.reset = r->reset, r->reset = split_reset;
-		/* the HUD renderer's own sprite filter: only the HUD's sprites */
-		pthread_mutex_lock(&hideLock);
-		HideSlot* s = slot_for(NULL);
-		if (s) {
-			s->renderer = h;
-			s->orig = h->drawScanline;
-			s->n = 0;
-		}
-		pthread_mutex_unlock(&hideLock);
-		split.installed = true;
-		split_resync(e);
-	}
-	split.bgMask = split.baseMask = bgMask;
-	split.lineHud = split.lineGame = bgMask;
-	if (!on) lastBandY0 = 0, lastBandY1 = -1;
-	split.nObjs = nObjs < 12 ? nObjs : 12;
-	if (split.nObjs) memcpy(split.objs, objs, sizeof(*objs) * split.nObjs);
-	/* the HUD: those layers and sprites only */
-	struct GBAVideoRenderer* h = &split.hud.d;
-	if (!split.grabbing) split_layers(bgMask, split.nObjs > 0 || split.nKeep > 0);
-	pthread_mutex_lock(&hideLock);
-	HideSlot* hs = slot_for(h);
-	if (hs) {
-		hs->n = split.nObjs;
-		memcpy(hs->rules, split.objs, sizeof(split.objs));
-		hs->keepOnly = true;
-	}
-	pthread_mutex_unlock(&hideLock);
-	split.hud.oamDirty = true;
-	/* the game: without them (the rules can change while on: another scene) */
-	for (int i = 0; i < 4; ++i) r->disableBG[i] = on && ((bgMask >> i) & 1);
-	emu_hide_sprites(e, on ? split.objs : NULL, on ? split.nObjs : 0);
-	split.active = on;
-	if (gameRegBits) {
-		/* the register as it is now, with or without those bits */
-		uint16_t v = gba->memory.io[gameRegAddr >> 1];
-		split.writeVideoRegister(r, gameRegAddr, on ? v & ~gameRegBits : v);
-		split.hud.d.writeVideoRegister(&split.hud.d, gameRegAddr, hud_reg(gameRegAddr, on ? v & ~gameRegBits : v));
-	}
-	return true;
-}
-
-void emu_hud_copy(Emu* e, bool copy) {
-	struct GBA* gba = e->core->board;
-	struct GBAVideoRenderer* r = gba->video.renderer;
-	if (!r || !split.installed || !split.active) return;
-	splitCopying = copy;
-	for (int i = 0; i < 4; ++i) r->disableBG[i] = !copy && ((split.bgMask >> i) & 1);
-	emu_hide_sprites(e, copy ? NULL : split.objs, copy ? 0 : split.nObjs);
-}
-
-void emu_hud_keep_exact(const uint16_t (*attrs)[3], int n) {
-	if (!split.installed) return;
-	struct GBAVideoRenderer* h = &split.hud.d;
-	n = n > 128 ? 128 : n;
-	pthread_mutex_lock(&hideLock);
-	HideSlot* hs = slot_for(h);
-	if (hs) {
-		hs->nExact = n, hs->exactKeep = true;
-		if (n) memcpy(hs->exact, attrs, sizeof(*attrs) * n);
-	}
-	pthread_mutex_unlock(&hideLock);
-	split.nKeep = hs ? n : 0;
-	if (!split.grabbing) split_layers(split.bgMask, split.nObjs > 0 || split.nKeep > 0);
-	split.hud.oamDirty = true;
-}
-
-void emu_hud_copy_above(int row) {
-	copyAbove = row;
-}
-
-void emu_hud_rows(int rows) {
-	splitRows = rows;
-}
-
-void emu_hud_band(bool on, bool copy, bool watch) {
-	if (on != bandOn) memset(bandNormal, 0, sizeof(bandNormal)), lastBandY0 = 0, lastBandY1 = -1;
-	bandOn = on;
-	bandCopy = copy;
-	bandWatch = watch;
-}
-
-bool emu_hud_band_rows(int* y0, int* y1) {
-	*y0 = lastBandY0, *y1 = lastBandY1;
-	/* (a band that's most of the screen isn't one) */
-	return lastBandY1 >= lastBandY0 && lastBandY1 - lastBandY0 < 100;
-}
-
-void emu_hud_game_reg(uint32_t addr, uint16_t bits) {
-	gameRegAddr = addr;
-	gameRegBits = bits;
-}
-
-uint32_t emu_hud_clear(void) {
-	/* exactly what the HUD renderer writes for its backdrop */
-	return split.installed ? (uint32_t) split.hud.normalPalette[0] & 0xFFFFFF : 0xFF00FF;
-}
-
-void emu_hud_by_priority(int prioBelow) {
-	split.prioBelow = prioBelow;
-}
-
-void emu_hud_keep_bgs(unsigned mask) {
-	split.keepBgs = mask;
-}
-
-void emu_hud_mem_layers(const uint32_t addr[2], const uint32_t mask[2], const uint32_t value[2], const int size[2], int n, bool any, unsigned layers, int gamePal) {
-	split.memN = n < 0 ? 0 : n > 2 ? 2 : n;
-	split.memGamePal = split.memN ? gamePal : 0;
-	split.memLineOff = 0;
-	split.memAny = any;
-	for (int i = 0; i < split.memN; ++i) split.memAddr[i] = addr[i], split.memMask[i] = mask[i], split.memVal[i] = value[i], split.memSize[i] = size[i];
-	split.memLayers = layers;
-}
-
-uint16_t emu_io16(Emu* e, uint32_t offset) {
-	return ((struct GBA*) e->core->board)->memory.io[(offset & 0x3FE) >> 1];
-}
-
-void emu_vram_write(Emu* e, uint32_t off, const void* src, size_t n) {
-	struct GBA* gba = e->core->board;
-	if (off >= 0x18000 || n > 0x18000 - off) return;
-	memcpy((uint8_t*) gba->video.vram + off, src, n);
-	/* (the software renderer's hook only drops its caches, whatever the address) */
-	gba->video.renderer->writeVRAM(gba->video.renderer, off);
-}
-
-void emu_oam_read(Emu* e, uint16_t* out) {
-	struct GBA* gba = e->core->board;
-	memcpy(out, gba->video.oam.raw, sizeof(gba->video.oam.raw));
-}
-void emu_oam_write(Emu* e, const uint16_t* src) {
-	struct GBA* gba = e->core->board;
-	for (int i = 0; i < 512; ++i) {
-		if (gba->video.oam.raw[i] == src[i]) continue;
-		gba->video.oam.raw[i] = src[i];
-		gba->video.renderer->writeOAM(gba->video.renderer, (uint32_t) i);
-	}
-}
-
-const uint16_t* emu_vram(Emu* e) {
-	return ((struct GBA*) e->core->board)->video.vram;
-}
-
-void emu_hud_grab(Emu* e, unsigned bgMask, uint32_t* buf) {
-	(void) e;
-	if (!split.installed || !split.active) return;
-	split.grabMask = bgMask;
-	split.grabCnt = 0;
-	split.grabBuf = buf;
-	split.grabbed = false;
-}
-
-void emu_hud_grab_cnt(Emu* e, uint16_t cnt, uint32_t* buf) {
-	emu_hud_grab(e, 0, buf);
-	split.grabCnt = cnt;
-}
-
-bool emu_hud_grabbed(void) {
-	bool g = split.grabbed;
-	split.grabbed = false;
-	return g;
-}
-
-/* ---------------------------------------------------------------- cheats */
+static int cheatCount;
 
 void emu_cheats_clear(Emu* e) {
-	struct mCheatDevice* device = e->core->cheatDevice(e->core);
-	if (!device) return;
-	/* mCheatDeviceClear only frees the sets: a Code Breaker hook (the
-	 * "Enable Code") would stay patched into the ROM, and the next hook
-	 * would save that patch as the original instruction and loop forever.
-	 * Switch each set off (restores ROM patches) and remove it (restores
-	 * the hooked instruction) first. */
-	while (mCheatSetsSize(&device->cheats)) {
-		struct mCheatSet* set = *mCheatSetsGetPointer(&device->cheats, mCheatSetsSize(&device->cheats) - 1);
-		set->enabled = false;
-		mCheatRefresh(device, set);
-		mCheatRemoveSet(device, set);
-		mCheatSetDeinit(set);
-	}
+	if (S(e)) S(e)->cheat_reset();
+	cheatCount = 0;
 }
 
-static bool is_hex(const char* s, size_t n) {
-	for (size_t i = 0; i < n; ++i) {
-		if (!isxdigit((unsigned char) s[i])) return false;
-	}
-	return true;
-}
-
+/* codes in RetroArch's .cht form ("XXXXXXXX YYYY" GameShark lines joined with
+ * '+'); SwanStation takes them as they are */
 int emu_cheats_add(Emu* e, const char* name, const char* const* codes, int n, int type) {
-	struct mCheatDevice* device = e->core->cheatDevice(e->core);
-	if (!device) return 0;
-	int mtype = type == EMU_CHEAT_CODEBREAKER ? GBA_CHEAT_CODEBREAKER :
-	            type == EMU_CHEAT_GAMESHARK ? GBA_CHEAT_GAMESHARK :
-	            type == EMU_CHEAT_ACTION_REPLAY ? GBA_CHEAT_PRO_ACTION_REPLAY : GBA_CHEAT_AUTODETECT;
-	struct mCheatSet* set = device->createSet(device, name);
+	(void)name; (void)type;
+	Slot* s = S(e);
+	if (!s) return 0;
 	int added = 0;
-	for (int c = 0; c < n; ++c) {
-		/* split into hex words on '+' and spaces, then pair them up:
-		 * 8 + 4 digits is a Code Breaker line, 8 + 8 a GameShark / AR one */
-		char words[64][20];
-		int nw = 0;
-		const char* p = codes[c];
-		while (*p && nw < 64) {
-			while (*p == '+' || isspace((unsigned char) *p)) ++p;
-			const char* q = p;
-			while (*q && *q != '+' && !isspace((unsigned char) *q)) ++q;
-			size_t len = (size_t) (q - p);
-			if (len && len < sizeof(words[0])) {
-				memcpy(words[nw], p, len);
-				words[nw++][len] = 0;
-			}
-			p = q;
+	for (int i = 0; i < n; i++)
+		if (codes[i] && *codes[i]) {
+			s->cheat_set(cheatCount++, true, codes[i]);
+			added++;
 		}
-		for (int w = 0; w + 1 < nw; w += 2) {
-			size_t l1 = strlen(words[w]), l2 = strlen(words[w + 1]);
-			if (l1 != 8 || (l2 != 4 && l2 != 8) || !is_hex(words[w], l1) || !is_hex(words[w + 1], l2)) {
-				fprintf(stderr, "cheat %s: skipping \"%s %s\"\n", name ? name : "", words[w], words[w + 1]);
-				continue;
-			}
-			char line[20];
-			snprintf(line, sizeof(line), "%s %s", words[w], words[w + 1]);
-			int t = l2 == 4 ? GBA_CHEAT_CODEBREAKER : mtype == GBA_CHEAT_CODEBREAKER ? GBA_CHEAT_AUTODETECT : mtype;
-			if (mCheatAddLine(set, line, t)) ++added;
-			else fprintf(stderr, "cheat %s: mGBA rejected \"%s\"\n", name ? name : "", line);
-		}
-	}
-	set->enabled = true;
-	mCheatAddSet(device, set);
 	return added;
 }
+
+/* --- the GBA's video hardware: nothing on the PS1 ------------------------------------ */
+
+void emu_hide_sprites(Emu* e, const SpriteRule* r, int n) { (void)e; (void)r; (void)n; }
+void emu_keep_sprites(Emu* e, const SpriteRule* r, int n) { (void)e; (void)r; (void)n; }
+void emu_hide_grouped(Emu* e, bool on) { (void)e; (void)on; }
+void emu_hide_exact(Emu* e, const uint16_t (*a)[3], int n) { (void)e; (void)a; (void)n; }
+void emu_layers(Emu* e, unsigned mask) { (void)e; (void)mask; }
+bool emu_hud_split(Emu* e, bool on, unsigned bg, const SpriteRule* o, int n, uint32_t* hud) { (void)e; (void)on; (void)bg; (void)o; (void)n; (void)hud; return false; }
+uint32_t emu_hud_clear(void) { return 0xFF00FF; }
+void emu_hud_grab(Emu* e, unsigned bg, uint32_t* buf) { (void)e; (void)bg; (void)buf; }
+void emu_hud_grab_cnt(Emu* e, uint16_t cnt, uint32_t* buf) { (void)e; (void)cnt; (void)buf; }
+void emu_hud_by_priority(int p) { (void)p; }
+void emu_hud_keep_bgs(unsigned m) { (void)m; }
+void emu_hud_mem_layers(const uint32_t a[2], const uint32_t m[2], const uint32_t v[2], const int s[2], int n, bool any, unsigned l, int gp) { (void)a; (void)m; (void)v; (void)s; (void)n; (void)any; (void)l; (void)gp; }
+void emu_hud_game_reg(uint32_t a, uint16_t b) { (void)a; (void)b; }
+void emu_hud_band(bool on, bool copy, bool watch) { (void)on; (void)copy; (void)watch; }
+void emu_hud_copy(Emu* e, bool copy) { (void)e; (void)copy; }
+void emu_hud_copy_above(int row) { (void)row; }
+void emu_hud_rows(int rows) { (void)rows; }
+void emu_hud_keep_exact(const uint16_t (*a)[3], int n) { (void)a; (void)n; }
+bool emu_hud_band_rows(int* y0, int* y1) { (void)y0; (void)y1; return false; }
+bool emu_hud_grabbed(void) { return false; }
+uint16_t emu_io16(Emu* e, uint32_t off) { (void)e; (void)off; return 0; }
+static uint16_t noVram[0xC000];
+const uint16_t* emu_vram(Emu* e) { (void)e; return noVram; }
+void emu_vram_write(Emu* e, uint32_t off, const void* src, size_t n) { (void)e; (void)off; (void)src; (void)n; }
+void emu_oam_read(Emu* e, uint16_t* out) { (void)e; memset(out, 0, 1024); }
+void emu_oam_write(Emu* e, const uint16_t* src) { (void)e; (void)src; }

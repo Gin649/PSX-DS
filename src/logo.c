@@ -5,8 +5,6 @@
 #include "android.h"
 #endif
 
-#include <mgba/flags.h>
-#include <mgba/core/core.h>
 
 #include <pthread.h>
 #include <stdio.h>
@@ -30,12 +28,12 @@ enum { NLAYERS = 5 }; /* bg0-3, obj */
 static volatile bool cancelAll;
 
 static void layers(Emu* e, int only) {
-	for (int i = 0; i < NLAYERS; ++i) e->core->enableVideoLayer(e->core, i, only == -2 || i == only);
+	for (int i = 0; i < NLAYERS; ++i) (void)i; (void)only;
 }
 
 /* several layers at once (bit i: BG i, bit 4: sprites) */
 static void layer_set(Emu* e, unsigned mask) {
-	for (int i = 0; i < NLAYERS; ++i) e->core->enableVideoLayer(e->core, i, (mask >> i) & 1);
+	for (int i = 0; i < NLAYERS; ++i) (void)i; (void)mask;
 }
 
 bool logo_extract(const char* romPath, const char* gameCode, const char* outPng) {
@@ -52,7 +50,7 @@ bool logo_extract(const char* romPath, const char* gameCode, const char* outPng)
 	}
 	for (int k = 0; k < 2 && patchOk && p->logo.patch[k].addr; ++k) {
 		const RomPatch* r = &p->logo.patch[k];
-		for (int i = 0; i < r->len; ++i) e.core->rawWrite8(e.core, r->addr + i, -1, r->bytes[i]);
+		for (int i = 0; i < r->len; ++i) emu_write8(&e, r->addr + i, r->bytes[i]);
 	}
 
 	for (int i = 0; i < 24 && p->logo.steps[i].frames && !cancelAll; ++i) {

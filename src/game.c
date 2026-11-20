@@ -1586,7 +1586,7 @@ static bool patchReloadNext;
  * the game reopens with it, and loaded straight back, so it carries on */
 static bool patchHandoffNext;
 static char patchHandoff[1100];
-uint32_t doCrc32(const void* buf, size_t size); /* (libmgba's: its header wants zlib.h) */
+uint32_t doCrc32(const void* buf, size_t size); /* (emu.c) */
 enum { PR_RESTART, PR_SAVE, PR_STATES, PR_HEADER, PR_SUMMARY, PR_BESIDE, PR_PATCH, PR_EMPTY };
 /* what each file does to the ROM on its own (worked out as the list opens) */
 typedef struct {

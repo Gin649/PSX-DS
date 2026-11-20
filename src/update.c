@@ -9,7 +9,8 @@
 #include "android.h"
 #endif
 
-#include <mgba-util/vfs.h>
+#include <dirent.h>
+#include "unzip.h"
 
 #include <SDL.h>
 #include <errno.h>
@@ -348,24 +349,20 @@ static bool path_exists(const char* p) {
 	return stat(p, &st) == 0;
 }
 
-/* Write vf's contents to dest (0755 if exec). */
-static bool write_file(struct VFile* vf, const char* dest, bool exec) {
+/* Write the zip's entry i to dest (0755 if exec). */
+static bool write_file(Zip* z, int i, const char* dest, bool exec) {
 	mkdir_for(dest);
 	int fd = open(dest, O_WRONLY | O_CREAT | O_TRUNC, exec ? 0755 : 0644);
 	if (fd < 0) return false;
-	char buf[65536];
-	ssize_t n;
-	bool ok = true;
-	vf->seek(vf, 0, SEEK_SET);
-	while ((n = vf->read(vf, buf, sizeof(buf))) > 0) {
-		if (write(fd, buf, (size_t) n) != n) {
-			ok = false;
-			break;
-		}
+	FILE* f = fdopen(fd, "wb");
+	if (!f) {
+		close(fd);
+		return false;
 	}
-	if (n < 0) ok = false;
+	bool ok = zip_extract(z, i, f);
+	if (fflush(f) != 0) ok = false;
 	if (fsync(fd) != 0 && errno != EINVAL) { /* (a filesystem without fsync is fine) */ }
-	if (close(fd) != 0) ok = false;
+	if (fclose(f) != 0) ok = false;
 	if (exec) chmod(dest, 0755);
 	return ok;
 }
@@ -378,7 +375,7 @@ typedef struct { char from[1100], to[1100]; } Move;
  * (a running program or script keeps its old copy). The player's
  * gba-ds.cfg is kept. */
 static bool install_zip(const char* zip, char* err, size_t errSize) {
-	struct VDir* d = VDirOpenArchive(zip);
+	Zip* d = zip_open(zip);
 	if (!d) {
 		snprintf(err, errSize, "the download isn't a zip");
 		return false;
@@ -390,11 +387,9 @@ static bool install_zip(const char* zip, char* err, size_t errSize) {
 	int nMoves = 0, cap = 0;
 	bool ok = true, sawBinary = false;
 	char newBinary[1100] = "";
-	d->rewind(d);
-	struct VDirEntry* e;
-	while (ok && (e = d->listNext(d))) {
-		const char* name = e->name(e);
-		if (!name || !name[0] || ends_with(name, "/") || e->type(e) == VFS_DIRECTORY) continue;
+	for (int zi = 0; ok && zi < zip_count(d); ++zi) {
+		const char* name = zip_name(d, zi);
+		if (!name || !name[0] || ends_with(name, "/")) continue;
 		if (strstr(name, "..") || name[0] == '/') continue;
 		char dest[1100];
 		bool app = !strncmp(name, "gba-ds/", 7);
@@ -418,12 +413,6 @@ static bool install_zip(const char* zip, char* err, size_t errSize) {
 		}
 		bool exec = !strcmp(name, "gba-ds/gba-ds") || ends_with(name, ".sh");
 		if (!strcmp(name, "gba-ds/gba-ds")) sawBinary = true;
-		struct VFile* vf = d->openFile(d, name, O_RDONLY);
-		if (!vf) {
-			snprintf(err, errSize, "couldn't read %s in the download", name);
-			ok = false;
-			break;
-		}
 		if (nMoves == cap) {
 			cap = cap ? cap * 2 : 64;
 			moves = realloc(moves, sizeof(Move) * (size_t) cap);
@@ -431,7 +420,7 @@ static bool install_zip(const char* zip, char* err, size_t errSize) {
 		Move* m = &moves[nMoves++];
 		snprintf(m->to, sizeof(m->to), "%s", dest);
 		snprintf(m->from, sizeof(m->from), "%.1090s.new", dest);
-		if (!write_file(vf, m->from, exec)) {
+		if (!write_file(d, zi, m->from, exec)) {
 			snprintf(err, errSize, "couldn't write %s: %s", dest, strerror(errno));
 			ok = false;
 		}
@@ -439,11 +428,10 @@ static bool install_zip(const char* zip, char* err, size_t errSize) {
 		 * programs): the new program goes there too */
 		if (ok && !strcmp(name, "gba-ds/gba-ds") && U.exePath[0] && strncmp(U.exePath, U.installDir, strlen(U.installDir)) != 0) {
 			snprintf(newBinary, sizeof(newBinary), "%.1090s.new", U.exePath);
-			if (!write_file(vf, newBinary, true)) newBinary[0] = 0;
+			if (!write_file(d, zi, newBinary, true)) newBinary[0] = 0;
 		}
-		vf->close(vf);
 	}
-	d->close(d);
+	zip_close(d);
 	if (ok && !sawBinary) {
 		snprintf(err, errSize, "the download has no gba-ds program in it");
 		ok = false;
@@ -595,18 +583,18 @@ void update_init(const Config* cfg, const char* exeDir, int argc, char** argv) {
 	load_state_file();
 	U.info.autoOn = U.autoCfg >= 0 ? U.autoCfg : U.autoDefault;
 	/* leftovers of a download cut short */
-	struct VDir* d = VDirOpen(U.workDir);
+	DIR* d = opendir(U.workDir);
 	if (d) {
-		struct VDirEntry* e;
-		while ((e = d->listNext(d))) {
-			const char* nm = e->name(e);
+		struct dirent* e;
+		while ((e = readdir(d))) {
+			const char* nm = e->d_name;
 			if (ends_with(nm, ".part") || ends_with(nm, ".zip") || ends_with(nm, ".apk")) {
 				char p[1400];
 				snprintf(p, sizeof(p), "%s/%s", U.workDir, nm);
 				unlink(p);
 			}
 		}
-		d->close(d);
+		closedir(d);
 	}
 }
 

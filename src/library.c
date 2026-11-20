@@ -463,8 +463,7 @@ static void rom_crc_put(const RomCrc* c) {
 	++crcGen;
 }
 
-/* (libmgba's; its header, mgba-util/crc32.h, wants zlib.h, which isn't on
- * every build's include path) */
+/* (emu.c) */
 uint32_t doCrc32(const void* buf, size_t size);
 
 static uint32_t rom_crc_read(const char* path, char files[][1024], int nFiles, int* patch) {

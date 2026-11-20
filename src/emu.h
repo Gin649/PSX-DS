@@ -6,8 +6,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define GBA_W 240
-#define GBA_H 160
+/* The picture the rest of the app works with: every PS1 frame is scaled into
+ * it (emu.c). The names are the GBA build's; they go in a later clean-up. */
+#define GBA_W 640
+#define GBA_H 480
 
 /* GBA key bits as used by mCore::setKeys */
 enum {
@@ -21,7 +23,23 @@ enum {
 	K_DOWN = 1 << 7,
 	K_R = 1 << 8,
 	K_L = 1 << 9,
+	/* the PS1's extra buttons (K_A right/Circle, K_B bottom/Cross) */
+	K_X = 1 << 10,  /* top: Triangle */
+	K_Y = 1 << 11,  /* left: Square */
+	K_L2 = 1 << 12,
+	K_R2 = 1 << 13,
+	K_L3 = 1 << 14,
+	K_R3 = 1 << 15,
 };
+
+/* Where the core library copies are (one per open game: the game and the
+ * hidden copy; Android passes the APK's two). Without them, PSXDS_CORE names
+ * one and emu.c copies it as needed. */
+void emu_set_core_paths(const char* const* paths, int n);
+/* The BIOS folder and the memory cards' folder (NULL: unchanged). */
+void emu_set_dirs(const char* bios, const char* saves);
+/* A SwanStation option (swanstation_..., set before emu_open). */
+void emu_set_option(const char* key, const char* value);
 
 struct mCore;
 
