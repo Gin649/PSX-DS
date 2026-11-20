@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">GBA DS</string>
+    <string name="app_name">PSX-DS</string>
     <string name="files_title">Allow All files access</string>
     <string name="files_why">GBA DS reads your games from your ROM folder and keeps its save states, screenshots, cheats and game logos in a \"GBA DS\" folder on your storage. Android calls the permission for that \"All files access\".\n\nOn the next screen, switch it on for GBA DS, then come back.</string>
     <string name="files_open">Continue</string>

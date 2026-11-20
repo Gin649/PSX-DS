@@ -22,6 +22,14 @@ def keystore = System.getenv("GBADS_KEYSTORE")
 android {
     namespace "io.github.kyannon.gbads"
     compileSdk 34
+    packaging {
+        jniLibs {
+            // the two SwanStation copies are unpacked to nativeLibraryDir and
+            // loaded by path, one each for the game and the hidden copy
+            useLegacyPackaging true
+            keepDebugSymbols += ['**/libswan_a.so', '**/libswan_b.so']
+        }
+    }
     def ndkDir = System.getenv("ANDROID_NDK_HOME") ?: System.getenv("ANDROID_NDK_LATEST_HOME")
     if (ndkDir) {
         ndkPath ndkDir
@@ -32,7 +40,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "io.github.kyannon.gbads"
+        applicationId "io.github.gin649.psxds"
         minSdk 26
         targetSdk 34
         versionCode runNumber

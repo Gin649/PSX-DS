@@ -9,7 +9,7 @@ name: Android
 
 on:
   push:
-    branches: [android, dev]
+    branches: [psx, android, dev]
   workflow_dispatch:
 
 jobs:
@@ -44,6 +44,7 @@ jobs:
           GBADS_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           GBADS_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          sudo apt-get install -y ninja-build >/dev/null
           export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME}"
           set -o pipefail
           scripts/build-android.sh 2>&1 | tee "$RUNNER_TEMP/build.log"
@@ -64,10 +65,10 @@ jobs:
         run: |
           echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
           # for the release notes: the APK's own checksum (the artifact digest is the zip's)
-          echo "::notice title=APK SHA-256::$(cd dist && sha256sum gba-ds-*-android.apk)"
+          echo "::notice title=APK SHA-256::$(cd dist && sha256sum psx-ds-*-android.apk)"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: gba-ds-v${{ steps.v.outputs.version }}-android
-          path: dist/gba-ds-*-android.apk
+          name: psx-ds-v${{ steps.v.outputs.version }}-android
+          path: dist/psx-ds-*-android.apk
           if-no-files-found: error

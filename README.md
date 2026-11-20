@@ -1,3 +1,9 @@
+# PSX-DS
+
+**PSX-DS is a PlayStation fork of [GBA DS](https://github.com/kyannon/gba-ds) by kyannon,** being built for the AYN Thor. It swaps GBA DS's mGBA core for [SwanStation](https://github.com/libretro/swanstation) so PS1 games can show their own maps and menus on the second screen. It's early work in progress: the app still runs GBA games for now. The rest of this README is GBA DS's own and will be rewritten as PSX-DS takes shape.
+
+---
+
 # GBA DS
 
 <p align="center"><img src="docs/lineup.png" width="100%" alt="GBA DS on three dual-screen handhelds: Metroid: Zero Mission with its map on a DS-style handheld, Pokémon Pinball's table across both screens of one with a wide top screen, and Golden Sun with its menu on another"></p>

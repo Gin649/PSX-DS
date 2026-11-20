@@ -21,3 +21,4 @@ __pycache__/
 
 # the Chinese fonts' variable sources (tools/make_zh_font.py): only the subsets are kept
 assets/fonts/NotoSans*[[]wght[]].ttf
+android/app/src/main/jniLibs/
