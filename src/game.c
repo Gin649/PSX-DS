@@ -1147,11 +1147,11 @@ static bool debug;
 
 /* ---------------------------------------------------------------- menu */
 
-enum MenuItem { M_RESUME, M_CHEATS, M_PATCHES, M_ACH, M_SHOT, M_SWAP, M_SCALE, M_LCD, M_OVERLAY, M_FPS, M_SAVE, M_LOAD, M_RESTART, M_LIBRARY, M_EXIT, M_FRAMEBUF, M_LOGO, M_MATCH, M_REWIND, M_AUTOSAVE, M_AUTOLOAD, M_BUG, M_SLOT, M_SHAPES, M_FF, M_COLOR, M_GHOST, M_BUTTONS, M_PIXLOGO, M_PLACE };
+enum MenuItem { M_RESUME, M_CHEATS, M_DISC, M_ACH, M_SHOT, M_SWAP, M_SCALE, M_LCD, M_OVERLAY, M_FPS, M_SAVE, M_LOAD, M_RESTART, M_LIBRARY, M_EXIT, M_FRAMEBUF, M_LOGO, M_MATCH, M_REWIND, M_AUTOSAVE, M_AUTOLOAD, M_BUG, M_SLOT, M_SHAPES, M_FF, M_COLOR, M_GHOST, M_BUTTONS, M_PIXLOGO, M_PLACE };
 static const char* menuLabels[] = {
 	/* title case: drawn in Futura from the built-in images (tools/make_brand.py) */
 	[M_RESUME] = N_("Resume"), [M_SWAP] = N_("Swap Screens"), [M_SAVE] = N_("Save State"), [M_SCALE] = "", [M_LCD] = "", [M_FPS] = "", [M_FRAMEBUF] = "", [M_OVERLAY] = "", [M_LOGO] = "", [M_MATCH] = "", [M_REWIND] = "", [M_RESTART] = N_("Restart Game"),
-	[M_LOAD] = N_("Load State"), [M_CHEATS] = "Cheats", [M_PATCHES] = "Patches", [M_BUTTONS] = N_("Buttons"), [M_ACH] = "Achievements", [M_SHOT] = N_("Take Screenshot"), [M_LIBRARY] = N_("Close Game"), [M_EXIT] = N_("Close PSX-DS"),
+	[M_LOAD] = N_("Load State"), [M_CHEATS] = "Cheats", [M_DISC] = N_("Swap Disc"), [M_BUTTONS] = N_("Buttons"), [M_ACH] = "Achievements", [M_SHOT] = N_("Take Screenshot"), [M_LIBRARY] = N_("Close Game"), [M_EXIT] = N_("Close PSX-DS"),
 	[M_AUTOSAVE] = "", [M_AUTOLOAD] = "", [M_BUG] = N_("Submit a Bug Report"), [M_SLOT] = "", [M_FF] = "", [M_COLOR] = "", [M_GHOST] = "", [M_PIXLOGO] = "", [M_PLACE] = "",
 };
 static int menuItems[12], nMenuItems;
@@ -1160,7 +1160,7 @@ static int menuItems[12], nMenuItems;
 static int itemRow[12], itemSide[12], nMenuRows;
 static bool half_item(int item) {
 	return item == M_RESUME || item == M_RESTART || item == M_SAVE || item == M_LOAD || item == M_AUTOSAVE || item == M_AUTOLOAD || item == M_REWIND || item == M_FF ||
-	       item == M_COLOR || item == M_GHOST || item == M_CHEATS || item == M_PATCHES || item == M_SHOT || item == M_BUG;
+	       item == M_COLOR || item == M_GHOST || item == M_CHEATS || item == M_DISC || item == M_SHOT || item == M_BUG;
 }
 /* Close Game and Close PSX-DS are double height: two rows tall, side by side
  * when both are there, else the one across the whole row */
@@ -1242,7 +1242,7 @@ static bool pacedFallback; /* Match Display Rate fell back to the PS1's rate (pa
 #define C_BTN_SEL ui_accent_color(AC_BTN_SEL)
 #define C_BTN_EDGE ui_accent_color(AC_EDGE)
 static const SDL_Color C_TEXT = { 236, 236, 244, 255 };
-static const SDL_Color C_DIS = { 100, 100, 120, 255 };
+static const SDL_Color C_DIS = { 107, 115, 134, 255 };
 #define C_GOLD ui_accent_color(AC_HI)
 
 static Cheats cheats;
@@ -1252,7 +1252,7 @@ static SDL_Rect ach_area(int scr);
 /* Every label a pause-menu button can show, for sizing the text so the
  * widest fits (item_label gives the current one). */
 static const char* const allLabels[] = {
-	N_("Resume"), N_("Restart Game"), N_("Are You Sure?"), N_("Save State"), N_("Load State"), "Cheats", "Patches", "Achievements",
+	N_("Resume"), N_("Restart Game"), N_("Are You Sure?"), N_("Save State"), N_("Load State"), "Cheats", N_("Swap Disc"), "Achievements",
 	N_("Take Screenshot"), N_("Close Game"), N_("Close PSX-DS"), N_("Submit a Bug Report"),
 	"\u2039   Slot 0: Sep 30, 12:59 PM   \u203A", /* (the slot row, with its arrows) */
 };
@@ -1389,6 +1389,7 @@ static void slot_step(int d) {
 
 static bool item_enabled(int item) {
 	if (item == M_CHEATS) return cheats.n > 0;
+	if (item == M_DISC) return emu_disc_count(&emu) > 1;
 	if (item == M_SHAPES) return ui_screens_differ(); /* (two screens of a shape: nothing to match) */
 	if (item == M_PLACE) return nScreens == 2;         /* (one screen: no gap) */
 	if (item == M_FRAMEBUF) return !tallProf;          /* (always on in the pinball games' two-screen view) */
@@ -2930,19 +2931,17 @@ static int item_at(int scr, int x, int y) {
 }
 
 /* Display > Shader: the label and the note under the buttons, by SH_* */
-#define SHADER_ON (cfg->shader != SH_OFF)
+/* the shader's cells: the PS1's own pixels, 2 x 2 in the 640x480 picture */
+#define SHADER_ON (cfg->shader != SH_OFF ? 2 : 0)
 static const char* const shaderLabels[SH_COUNT] = {
-	N_("Shader: Off"), N_("Shader: LCD Grid"), N_("Shader: Scanlines"), N_("Shader: Soft Cells"),
-	N_("Shader: Subpixels (Light)"), N_("Shader: Subpixels"), N_("Shader: Subpixels (Strong)"),
+	N_("Shader: Sharp pixels"), N_("Shader: Smooth"), N_("Shader: CRT scanlines"), N_("Shader: CRT shadow mask"), N_("Shader: Composite"),
 };
 static const char* const shaderNotes[SH_COUNT] = {
 	N_("The game's pixels as they are"),
-	N_("Lines between the pixels, like an LCD screen"),
-	N_("A dark line under each row of pixels"),
-	N_("Each pixel a little darker toward its edges"),
-	N_("Red, green and blue stripes, gentle: for dim screens"),
-	N_("Red, green and blue stripes, like an LCD screen"),
-	N_("Red, green and blue stripes, strong: for bright screens"),
+	N_("Softened scaling, no pixel edges"),
+	N_("Dark lines between rows, like a TV"),
+	N_("Scanlines and a TV's colour dots"),
+	N_("The soft, blended look of an AV cable"),
 };
 static const char* shader_label(int sh) {
 	return shaderLabels[sh >= 0 && sh < SH_COUNT ? sh : 0];
@@ -3652,13 +3651,9 @@ static void draw_tab_icon(int scr, int page, SDL_Rect box, SDL_Color fg, SDL_Col
 	SDL_Rect b = box;
 #define F(x, y, w, h, r, c) icon_fill(scr, b, size, x, y, w, h, r, c)
 	switch (page) {
-	case PG_GAME: /* a handheld: screen, D-pad, two buttons */
-		F(5, 2, 14, 20, 3, fg);
-		F(7, 4, 10, 8, 1, bg);
-		F(7.5f, 16.8f, 4, 1.4f, 0.5f, bg);
-		F(8.8f, 15.5f, 1.4f, 4, 0.5f, bg);
-		F(14, 15.2f, 2.4f, 2.4f, 1.2f, bg);
-		F(16.4f, 17.4f, 2.4f, 2.4f, 1.2f, bg);
+	case PG_GAME: /* a disc, with its hole */
+		F(2, 2, 20, 20, 10, fg);
+		F(9.5f, 9.5f, 5, 5, 2.5f, bg);
 		break;
 	case ICON_SYSTEM: /* a toolbox */
 		F(8, 2.5f, 8, 6, 2.5f, fg);
@@ -3811,6 +3806,13 @@ static void draw_menu(void) {
 		bool en = item_enabled(menuItems[i]);
 		const char* label = menuLabels[menuItems[i]];
 		if (menuItems[i] == M_SCALE) label = scale_label(cfg->scale);
+		if (menuItems[i] == M_DISC) {
+			static char discLabel[40];
+			int n = emu_disc_count(&emu);
+			if (n > 1) snprintf(discLabel, sizeof(discLabel), tr("Swap Disc: %d of %d"), emu_disc_index(&emu) + 1, n);
+			else snprintf(discLabel, sizeof(discLabel), "%s", tr("One Disc"));
+			label = discLabel;
+		}
 		if (menuItems[i] == M_LCD) label = shader_label(cfg->shader);
 		if (menuItems[i] == M_COLOR) label = cfg->colorCorrection ? N_("Color Correction: On"): N_("Color Correction: Off");
 		if (menuItems[i] == M_GHOST) label = cfg->ghosting ? N_("LCD Ghosting: On"): N_("LCD Ghosting: Off");
@@ -7000,7 +7002,7 @@ void prefs_save(Config* cfg) {
 	snprintf(prefs, sizeof(prefs), "%s/prefs.cfg", cfg->stateDir);
 	const char* kv[4][2] = {
 		{ "quick_bar_pinned", cfg->barPinned ? "1" : "0" },
-		{ "shader_last", shaderNames[cfg->shaderLast > SH_OFF && cfg->shaderLast < SH_COUNT ? cfg->shaderLast : SH_GRID] },
+		{ "shader_last", shaderNames[cfg->shaderLast > SH_OFF && cfg->shaderLast < SH_COUNT ? cfg->shaderLast : SH_SCANLINES] },
 		{ "bezel_inner", cfg->bezelInner },
 		{ "bezel_outer", cfg->bezelOuter },
 	};
@@ -7025,11 +7027,9 @@ static void swap_screens(void) {
 
 /* Display > Shader, or the shader hotkey: the pattern over the pixels */
 static void set_shader(int sh) {
-	bool subBefore = cfg->shader >= SH_SUB_LIGHT;
 	cfg->shader = sh;
 	if (sh != SH_OFF) cfg->shaderLast = sh;
 	ui_shader(cfg->shader);
-	if (subBefore || cfg->shader >= SH_SUB_LIGHT) rebuild_textures(); /* (the subpixels' brightening is in the colour table) */
 	commit_current("shader");
 	save_prefs();
 }
@@ -7641,9 +7641,15 @@ static bool activate(int item, enum GameExit* exitTo) {
 		if (!cheats.n) snprintf(menuNote, sizeof(menuNote), tr("No cheats found (see Cheats in the wiki)"));
 		else open_cheats();
 		break;
-	case M_PATCHES:
-		open_patches();
+	case M_DISC: {
+		/* the next disc (back to the first after the last) */
+		int n = emu_disc_count(&emu), next = (emu_disc_index(&emu) + 1) % SDL_max(1, n);
+		char m[48];
+		if (n > 1 && emu_disc_set(&emu, next)) snprintf(m, sizeof(m), tr("Disc %d of %d in"), next + 1, n);
+		else snprintf(m, sizeof(m), "%s", tr("This game has one disc"));
+		ui_osd(m);
 		break;
+	}
 	case M_SLOT:
 		slot_step(1);
 		break;
@@ -8037,7 +8043,7 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 	pages[PG_GAME][pageLen[PG_GAME]++] = M_LOAD;
 	pages[PG_GAME][pageLen[PG_GAME]++] = M_SLOT;
 	pages[PG_GAME][pageLen[PG_GAME]++] = M_CHEATS;
-	pages[PG_GAME][pageLen[PG_GAME]++] = M_PATCHES;
+	pages[PG_GAME][pageLen[PG_GAME]++] = M_DISC;
 	if (ra_enabled()) pages[PG_GAME][pageLen[PG_GAME]++] = M_ACH;
 	pages[PG_GAME][pageLen[PG_GAME]++] = M_SHOT;
 	pages[PG_GAME][pageLen[PG_GAME]++] = M_BUG;
@@ -8050,8 +8056,6 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 	ROW(PG_DISPLAY, "map_scale");
 	ROW(PG_DISPLAY, "shader");
 	ROW(PG_DISPLAY, "lcd_strength");
-	ROW(PG_DISPLAY, "color_correction");
-	ROW(PG_DISPLAY, "lcd_ghosting");
 	if (ui_logo_custom(cfg, romPath, emu.gameCode)) ROW(PG_DISPLAY, "custom_logos"); /* the game has the player's own or a scraped logo (GEN-11) */
 	if (nScreens >= 2) ROW(PG_SCREENS, "swap");
 	ROW(PG_SCREENS, "screen_match");
@@ -8654,7 +8658,7 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 				case HK_BAR: bar_toggle(); break;
 				case HK_SWAP: swap_screens(); break;
 				case HK_SHADER:
-					set_shader(cfg->shader != SH_OFF ? SH_OFF : cfg->shaderLast > SH_OFF && cfg->shaderLast < SH_COUNT ? cfg->shaderLast : SH_GRID);
+					set_shader(cfg->shader != SH_OFF ? SH_OFF : cfg->shaderLast > SH_OFF && cfg->shaderLast < SH_COUNT ? cfg->shaderLast : SH_SCANLINES);
 					ui_osd("%s", shader_label(cfg->shader));
 					break;
 				}

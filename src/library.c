@@ -55,9 +55,38 @@ static int nGames, capGames;
 #define C_ROW ui_accent_color(AC_ROW)
 #define C_SEL ui_accent_color(AC_BTN_SEL)
 static const SDL_Color C_TEXT = { 236, 236, 244, 255 };
-static const SDL_Color C_DIM = { 140, 140, 172, 255 };
+static const SDL_Color C_DIM = { 154, 163, 184, 255 };
 #define C_GOLD ui_accent_color(AC_HI)
 static const SDL_Color C_TAG = { 52, 120, 96, 255 };
+
+/* Recently played: <state_dir>/recent.txt, a game's path a line, newest first */
+#define RECENT_MAX 30
+static int recent_read(const Config* cfg, char paths[RECENT_MAX][1024]) {
+	char f[1100];
+	snprintf(f, sizeof(f), "%s/recent.txt", cfg->stateDir);
+	FILE* fp = fopen(f, "r");
+	int n = 0;
+	if (!fp) return 0;
+	while (n < RECENT_MAX && fgets(paths[n], 1024, fp)) {
+		paths[n][strcspn(paths[n], "\n")] = 0;
+		if (paths[n][0]) ++n;
+	}
+	fclose(fp);
+	return n;
+}
+static void recent_add(const Config* cfg, const char* path) {
+	static char paths[RECENT_MAX][1024];
+	int n = recent_read(cfg, paths);
+	char f[1100];
+	snprintf(f, sizeof(f), "%s/recent.txt", cfg->stateDir);
+	FILE* fp = fopen(f, "w");
+	if (!fp) return;
+	fprintf(fp, "%s\n", path);
+	for (int i = 0, kept = 1; i < n && kept < RECENT_MAX; ++i)
+		if (strcmp(paths[i], path)) fprintf(fp, "%s\n", paths[i]), ++kept;
+	fclose(fp);
+}
+static void recent_filter(const Config* cfg);
 
 static int cmp_games(const void* a, const void* b) {
 	return strcasecmp(((const GameEntry*) a)->name, ((const GameEntry*) b)->name);
@@ -242,11 +271,27 @@ static bool dir_seen(const char* d, const struct stat* st) {
 /* What the last full scan listed with (anything else: scan again) */
 static bool scanned;
 static char scannedRomDir[sizeof(((Config*) 0)->romDir)];
-static bool scannedShowAll, scannedNameTags;
+static int scannedListMode;
+static bool scannedNameTags;
+
+/* Recent: only the games in recent.txt, newest first */
+static void recent_filter(const Config* cfg) {
+	static char paths[RECENT_MAX][1024];
+	int n = recent_read(cfg, paths), kept = 0;
+	GameEntry tmp;
+	for (int r = 0; r < n; ++r)
+		for (int i = kept; i < nGames; ++i)
+			if (!strcmp(games[i].path, paths[r])) {
+				tmp = games[kept], games[kept] = games[i], games[i] = tmp;
+				++kept;
+				break;
+			}
+	nGames = kept;
+}
 
 /* Has anything the list was made from changed since the last scan? */
 static bool library_changed(const Config* cfg) {
-	if (!scanned || seenOverflow || strcmp(scannedRomDir, cfg->romDir) || scannedShowAll != cfg->showAll ||
+	if (!scanned || seenOverflow || strcmp(scannedRomDir, cfg->romDir) || scannedListMode != cfg->listMode ||
 	    scannedNameTags != cfg->nameTags)
 		return true;
 	for (int i = 0; i < nSeenDirs; ++i) {
@@ -384,7 +429,7 @@ static void scan_dir(Config* cfg, const char* d, int depth) {
 		/* a side build lists only its game's releases (the Makefile's SIDE_CODES) */
 		if (!strstr(PSXDS_SIDE_CODES, g.code)) continue;
 #endif
-		if (!g.supported && !cfg->showAll) continue; /* (before its patches are looked for: issue #49) */
+		if (!g.supported && cfg->listMode == 2) continue; /* (before its patches are looked for: issue #49) */
 		entry_patches(cfg, &g, de->d_name, (long long) st.st_size, (long long) st.st_mtime);
 		int n = (int) (ext - de->d_name);
 		if (n >= (int) sizeof(g.name)) n = sizeof(g.name) - 1;
@@ -616,6 +661,7 @@ static void scan(Config* cfg) {
 	for (char* d = strtok_r(dirs, ":", &save); d; d = strtok_r(NULL, ":", &save)) scan_dir(cfg, d, 0);
 	code_cache_save(cfg);
 	qsort(games, nGames, sizeof(*games), cmp_games);
+	if (cfg->listMode == 1) recent_filter(cfg);
 	/* Region flags, only where the library holds the same game from more
 	 * than one region: same first three code letters, different last one. */
 	for (int i = 0; i < nGames; ++i) {
@@ -633,7 +679,7 @@ static void scan(Config* cfg) {
 	for (int i = 0; i < nGames; ++i) ui_logo_queue(cfg, games[i].path, games[i].code);
 	scanned = true;
 	snprintf(scannedRomDir, sizeof(scannedRomDir), "%s", cfg->romDir);
-	scannedShowAll = cfg->showAll;
+	scannedListMode = cfg->listMode;
 	scannedNameTags = cfg->nameTags;
 	fprintf(stderr, "library: %d game(s), %d file(s) in %d folder(s), %llu ms\n", nGames, scanFiles, nSeenDirs,
 	        (unsigned long long) (SDL_GetTicks() - scanStart));
@@ -933,7 +979,7 @@ static void draw_games_button(const Config* cfg, int scr) {
 	SDL_Rect b = games_button(scr);
 	float px = ui_px(scr);
 	ui_key(scr, b, px * 3, KEY_PLAIN);
-	label_fit(scr, b.x + b.w / 2, b.y + b.h / 2, px * 5, b.w - px * 2, b.h, cfg->showAll ? tr("All") : tr("Supported"));
+	label_fit(scr, b.x + b.w / 2, b.y + b.h / 2, px * 5, b.w - px * 2, b.h, cfg->listMode == 1 ? tr("Recent") : cfg->listMode == 2 ? tr("Second screen") : tr("All games"));
 }
 
 /* Four squares (in the list: switch to the grid) or three lines (in the
@@ -1024,12 +1070,12 @@ static void draw_list(Config* cfg, int scr, int sel, int scroll) {
 	ListGeom g = list_geom(scr);
 	ui_fill(scr, (SDL_Rect) { 0, 0, r.w, r.h }, C_BG);
 	if (nGames == 0) {
-		ui_label(scr, r.w / 2, r.h / 2 - px * 14, px * 6, "No supported games in", C_TEXT);
+		ui_label(scr, r.w / 2, r.h / 2 - px * 14, px * 6, cfg->listMode == 1 ? "No games played yet from" : cfg->listMode == 2 ? "No games with a second screen in" : "No games in", C_TEXT);
 		char dir[300];
 		fit_text(dir, sizeof(dir), TF_BODY, px * 5, cfg->romDir, r.w - px * 16);
 		ui_font_text(scr, TF_BODY, r.w / 2, r.h / 2, px * 5, dir, C_GOLD, 0);
 		ui_font_text(scr, TF_BODY, r.w / 2, r.h / 2 + px * 14, px * 4,
-		             "Only games with a map screen are listed (show_all = 1 lists every one)", C_DIM, 0);
+		             cfg->listMode ? "The button at the top switches to all games" : "PS1 disc images: .cue, .chd, .pbp, .m3u and others", C_DIM, 0);
 	}
 	int done, total;
 	logo_progress(&done, &total);
@@ -1048,7 +1094,7 @@ static void draw_list(Config* cfg, int scr, int sel, int scroll) {
 				draw_brand(scr, games[i].flag, right - fw, t.y + (t.h - fh) / 2, fh);
 				right -= fw + px * 4;
 			}
-			if (!games[i].supported && cfg->showAll) {
+			if (!games[i].supported && cfg->listMode != 2) {
 				int tagW = ui_label_width(scr, px * 4, "Single screen only") + px * 6;
 				SDL_Rect tg = { right - tagW, t.y + (t.h - px * 11) / 2, tagW, px * 11 };
 				ui_fill_round(scr, tg, C_TAG, px * 2);
@@ -1091,7 +1137,7 @@ static void draw_list(Config* cfg, int scr, int sel, int scroll) {
 			int fw = brandH[games[i].flag] ? brandW[games[i].flag] * fh / brandH[games[i].flag] : 0;
 			draw_brand(scr, games[i].flag, t.x + t.w - fw - px * 3, t.y + t.h - fh - px * 3, fh);
 		}
-		if (!games[i].supported && cfg->showAll) {
+		if (!games[i].supported && cfg->listMode != 2) {
 			int tagW = ui_label_width(scr, px * 4, "Single screen only") + px * 6;
 			SDL_Rect tg = { t.x + t.w - tagW - px * 3, t.y + px * 3, tagW, px * 11 };
 			ui_fill_round(scr, tg, C_TAG, px * 2);
@@ -1323,8 +1369,8 @@ typedef struct {
 	const char* keys[24];
 } SetPage;
 static const SetPage setPages[SP_SYSTEM] = {
-	{ N_("Games"), N_("Which games, names, saving"), { "show_all", "name_tags", "save_on_quit", "auto_load", "custom_logos", "quick_bar_hint" } },
-	{ N_("Display"), N_("Scale, shader, theme, color"), { "scale", "map_scale", "shader", "lcd_strength", "color_correction", "lcd_ghosting", "smooth", "theme", "accent" } },
+	{ N_("Games"), N_("Which games, names, saving"), { "game_list", "name_tags", "save_on_quit", "auto_load", "custom_logos", "quick_bar_hint" } },
+	{ N_("Display"), N_("Scale, shader, theme, color"), { "scale", "map_scale", "shader", "lcd_strength", "theme", "accent" } },
 	{ "Screens", N_("Placement, overlays"), { "swap", "screen_match", "screen_placement", "overlays", "overlay_screens", "bezel_logo", "brightness_top", "brightness_bottom" } },
 	{ "Controls", N_("Controller, buttons, hotkeys"), { "pad_type", "left_stick_dpad", "ab_swap", "button_right", "button_bottom", "button_top", "button_left", "button_l", "button_r", "button_l2", "button_r2", "button_l3", "button_r3", "button_dpad_up", "button_dpad_down", "button_dpad_left", "button_dpad_right", "turbo_rate", "@map", "@hotkeys" } },
 	{ N_("Speed and sound"), N_("Rewind, fast forward"), { "show_fps", "match_display", "frame_buffer", "rewind", "rewind_seconds", "fast_forward", "audio_latency", "performance" } },
@@ -1507,7 +1553,7 @@ static void setting_changed(Config* cfg, const Setting* st) {
 	if (!strcmp(st->key, "theme")) ui_theme(cfg->lightTheme);
 	if (!strcmp(st->key, "accent")) ui_accent(cfg->accent), ui_theme(cfg->lightTheme);
 	if (!strncmp(st->key, "brightness_", 11)) ui_brightness(cfg->brightTop, cfg->brightBottom);
-	if (!strcmp(st->key, "show_all") || !strcmp(st->key, "name_tags")) setRescan = true;
+	if (!strcmp(st->key, "game_list") || !strcmp(st->key, "name_tags")) setRescan = true;
 	if (!strcmp(st->key, "screen_match") || !strcmp(st->key, "screen_placement")) ui_layout_pictures();
 	fprintf(stderr, "setting: %s = %s (all games)\n", lines[0][0], lines[0][1]);
 }
@@ -2725,9 +2771,9 @@ bool library_run(Config* cfg, char* outPath, size_t outSize) {
 				SDL_Rect sb = settings_button(ls), vb = view_button(ls), tb = theme_button(ls), gb = games_button(ls);
 				SDL_Point pt = { p.x, p.y };
 				if (SDL_PointInRect(&pt, &gb)) {
-					/* Supported / All: kept for all games (show_all), the list made again */
-					cfg->showAll = !cfg->showAll;
-					setting_changed(cfg, config_setting("show_all"));
+					/* All games / Recent / Second screen: kept for all games (game_list), the list made again */
+					cfg->listMode = (cfg->listMode + 1) % 3;
+					setting_changed(cfg, config_setting("game_list"));
 					setRescan = false;
 					free_thumbs();
 					free_tiles();
@@ -2802,5 +2848,6 @@ bool library_run(Config* cfg, char* outPath, size_t outSize) {
 		fprintf(f, "%s\n", outPath);
 		fclose(f);
 	}
+	recent_add(cfg, outPath);
 	return true;
 }

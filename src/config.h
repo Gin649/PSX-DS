@@ -16,7 +16,8 @@ enum { OVL_TOP = 1, OVL_BOTTOM = 2, OVL_BOTH = 3 };
  * every PS1 pixel (a texture built once, ui.c), so none costs more than the
  * LCD grid; the subpixel presets also brighten the colours to make up for
  * their stripes (the colour table, ui.c). */
-enum { SH_OFF, SH_GRID, SH_SCANLINES, SH_SOFT, SH_SUB_LIGHT, SH_SUB, SH_SUB_STRONG, SH_COUNT };
+/* the picture's look: sharp pixels, smooth scaling, or a TV's (PlayStation games were made for one) */
+enum { SH_OFF, SH_SMOOTH, SH_SCANLINES, SH_SHADOWMASK, SH_COMPOSITE, SH_COUNT };
 extern const char* const shaderNames[SH_COUNT]; /* psx-ds.cfg's names: off, grid, ... */
 /* the fast-forward speeds the pause menu goes through (ff_speed) */
 #define FF_SPEED_MIN 2
@@ -105,7 +106,7 @@ typedef struct Config {
 	bool barPinned;       /* the quick bar stays up (quick_bar_pinned) */
 	bool barHint;         /* "Swipe up for quick menu" at a game's start (quick_bar_hint) */
 	bool nameTags;        /* library keeps (USA), (En,Fr) etc. in game names */
-	bool showAll;         /* library lists games without a map profile too */
+	int listMode;         /* the game list (game_list): 0 every game, 1 the recently played, 2 those with a second screen */
 	int brightTop, brightBottom; /* this app's brightness for each screen, 20..100 (brightness_top / _bottom, issue #56): a dimming layer, not the system's */
 	char accent[16];      /* the menus' colour: purple | blue | teal | green | red | orange | pink (accent) */
 	bool lightTheme;      /* the light theme for the menus' buttons (theme = light) */

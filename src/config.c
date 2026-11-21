@@ -9,7 +9,7 @@
 #include <string.h>
 #include <strings.h>
 
-const char* const shaderNames[SH_COUNT] = { N_("off"), "grid", "scanlines", "soft", "subpixels-light", "subpixels", "subpixels-strong" };
+const char* const shaderNames[SH_COUNT] = { N_("off"), "smooth", "scanlines", "shadow-mask", "composite" };
 const char* const hotkeyNames[HK_COUNT] = { "quit", "save_state", "load_state", "quick_menu", "swap_screens", "shader" };
 static const char* const hotkeyDefaults[HK_COUNT] = { "start", "r", "l", "x", "y", "b" };
 
@@ -20,10 +20,10 @@ void config_defaults(Config* c) {
 	strcpy(c->stateFolder, "psxds");
 	strcpy(c->scale, "integer");
 	strcpy(c->mapScale, "integer");
-	strcpy(c->accent, "purple");
+	strcpy(c->accent, "psx");
 	strcpy(c->hotkey, "home");
 	for (int i = 0; i < HK_COUNT; ++i) strcpy(c->hotkeyBtn[i], hotkeyDefaults[i]);
-	c->shaderLast = SH_GRID;
+	c->shaderLast = SH_SCANLINES;
 	strcpy(c->menuCombo, "none");
 	strcpy(c->romDir, "/storage/roms/psx");
 	strcpy(c->screenshotDir, "/storage/roms/screenshots");
@@ -59,7 +59,7 @@ void config_defaults(Config* c) {
 	c->autoLoad = true;
 	c->barHint = true;
 	c->updateCheck = true;
-	c->showAll = false;
+	c->listMode = 0;
 	c->nameTags = false;
 	strcpy(c->raMode, "auto");
 	strcpy(c->raSystemCfg, "/storage/.config/system/configs/system.cfg");
@@ -105,8 +105,8 @@ static bool set_option(Config* c, const char* key, const char* val) {
 	}
 	if (!strcmp(key, "lcd_grid")) {
 		/* (before v1.4.12: the grid on or off) */
-		if (parse_bool(val)) c->shader = SH_GRID;
-		else if (c->shader == SH_GRID) c->shader = SH_OFF;
+		if (parse_bool(val)) c->shader = SH_SCANLINES;
+		else if (c->shader == SH_SCANLINES) c->shader = SH_OFF;
 		return true;
 	}
 	BOOL("color_correction", colorCorrection)
@@ -229,7 +229,8 @@ static bool set_option(Config* c, const char* key, const char* val) {
 	BOOL("auto_load", autoLoad)
 	BOOL("quick_bar_pinned", barPinned)
 	BOOL("quick_bar_hint", barHint)
-	BOOL("show_all", showAll)
+	INT("game_list", listMode)
+	if (!strcmp(key, "show_all")) return true; /* (GBA DS's: every game, or the supported ones) */
 	INT("pad_type", padType)
 	BOOL("left_stick_dpad", leftStickDpad)
 	STR("accent", accent)
@@ -434,16 +435,16 @@ void config_usage(const char* argv0) {
 #define ARR(a) a, (int) (sizeof(a) / sizeof(a[0]))
 static const SettingChoice chTheme[] = { { "dark", "Dark", 0 }, { "light", "Light", 1 } };
 static const SettingChoice chAccent[] = {
-	{ "purple", "Purple", 0 }, { "blue", "Blue", 0 }, { "teal", "Teal", 0 }, { "green", "Green", 0 }, { "red", "Red", 0 }, { "orange", "Orange", 0 }, { "pink", "Pink", 0 },
+	{ "psx", "PlayStation", 0 }, { "purple", "Purple", 0 }, { "blue", "Blue", 0 }, { "teal", "Teal", 0 }, { "green", "Green", 0 }, { "red", "Red", 0 }, { "orange", "Orange", 0 }, { "pink", "Pink", 0 },
 };
 static const SettingChoice chOnOff[] = { { "0", "Off", 0 }, { "1", "On", 1 } };
-static const SettingChoice chShown[] = { { "0", "Supported games only", 0 }, { "1", "All games", 1 } };
+static const SettingChoice chShown[] = { { "0", "All games", 0 }, { "1", "Recent", 1 }, { "2", "Second screen", 2 } };
 static const SettingChoice chTags[] = { { "0", "Plain", 0 }, { "1", "With tags, like (USA)", 1 } };
 static const SettingChoice chLogos[] = { { "pixelated", "Pixelated", CL_PIXELATED }, { "full", "Full detail", CL_FULL }, { N_("off"), "Not used", CL_OFF } };
 static const SettingChoice chScale[] = { { "integer", "Pixel Perfect", 0 }, { "fit", "Full Width", 0 }, { "zoom", "Zoom", 0 }, { "stretch", "Stretch", 0 } };
 static const SettingChoice chShader[] = {
-	{ N_("off"), "Off", SH_OFF }, { "grid", "LCD Grid", SH_GRID }, { "scanlines", "Scanlines", SH_SCANLINES }, { "soft", "Soft Cells", SH_SOFT },
-	{ "subpixels-light", "Subpixels (Light)", SH_SUB_LIGHT }, { "subpixels", "Subpixels", SH_SUB }, { "subpixels-strong", "Subpixels (Strong)", SH_SUB_STRONG },
+	{ N_("off"), "Sharp pixels", SH_OFF }, { "smooth", "Smooth", SH_SMOOTH }, { "scanlines", "CRT scanlines", SH_SCANLINES },
+	{ "shadow-mask", "CRT shadow mask", SH_SHADOWMASK }, { "composite", "Composite", SH_COMPOSITE },
 };
 static const SettingChoice chSwap[] = { { "0", "Game on top", 0 }, { "1", "Game below", 1 } };
 static const SettingChoice chMatch[] = { { "keep", "Keep device shapes", 0 }, { "aspect", "Match aspect ratios", 0 }, { "size", "Match sizes and shapes", 0 } };
@@ -469,7 +470,7 @@ static const SettingChoice chInterval[] = { { "30", "Every 0.5 s", 30 }, { "60",
 
 static const Setting settingsTable[] = {
 	{ "language", "Language", SF_STR, OFFB(language), ARR(chLanguage), 0, 0, 0, NULL, "Automatic follows the system. Text that isn't translated yet stays in English." },
-	{ "show_all", "Games shown", SF_BOOL, OFFB(showAll), ARR(chShown), 0, 0, 0, NULL, "Games without second-screen support play on one screen." },
+	{ "game_list", "Games shown", SF_INT, OFFB(listMode), ARR(chShown), 0, 0, 0, NULL, "Every game, the ones played lately (newest first), or the ones with a second screen. Games without one play on one screen." },
 	{ "name_tags", "Game names", SF_BOOL, OFFB(nameTags), ARR(chTags), 0, 0, 0, NULL, "Tags in a ROM's file name, like (USA) or (En,Fr,De)." },
 	{ "save_on_quit", "Save on quit", SF_BOOL, OFFB(autoSave), ARR(chOnOff), 0, 0, 0, NULL, "Closing a game saves where you are." },
 	{ "auto_load", "Auto-load", SF_BOOL, OFFB(autoLoad), ARR(chOnOff), 0, 0, 0, NULL, "Starting a game picks up where you closed it." },
@@ -478,8 +479,8 @@ static const Setting settingsTable[] = {
 
 	{ "scale", "Game screen scale", SF_STR, OFFB(scale), ARR(chScale), 0, 0, 0, NULL, "How the game's picture fills its screen." },
 	{ "map_scale", "Second screen scale", SF_STR, OFFB(mapScale), ARR(chScale), 0, 0, 0, NULL, "How the map or logo fills its screen." },
-	{ "shader", "Shader", SF_INT, OFFB(shader), ARR(chShader), 0, 0, 0, NULL, "A pattern over every pixel, on both screens." },
-	{ "lcd_strength", "Pattern strength", SF_INT, OFFB(lcdStrength), NULL, 0, 0, 100, 5, "%", "How dark the grid, scanlines and soft cells are." },
+	{ "shader", "Shader", SF_INT, OFFB(shader), ARR(chShader), 0, 0, 0, NULL, "Sharp pixels, smooth scaling, or the look of a TV: scanlines, a shadow mask's colour dots, or the soft blend of an AV cable." },
+	{ "lcd_strength", "Shader strength", SF_INT, OFFB(lcdStrength), NULL, 0, 0, 100, 5, "%", "How strong the scanlines, shadow mask and composite look are." },
 	{ "color_correction", "Color correction", SF_BOOL, OFFB(colorCorrection), ARR(chOnOff), 0, 0, 0, NULL, "Colors as a handheld's LCD screen would show them." },
 	{ "lcd_ghosting", "LCD ghosting", SF_BOOL, OFFB(ghosting), ARR(chOnOff), 0, 0, 0, NULL, "Moving things leave a short trail, as on an LCD." },
 	{ "smooth", "Smooth scaling", SF_BOOL, OFFB(smooth), ARR(chOnOff), 0, 0, 0, NULL, "Blurry instead of sharp: usually leave off." },

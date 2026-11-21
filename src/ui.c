@@ -1350,17 +1350,9 @@ void ui_color_correction(bool on) {
  * so the brightest can't be brightened much, and look a little darker
  * under the stripes than without them). */
 static int uiShader = SH_OFF;
-static const struct {
-	float other, gap, row; /* a stripe's other two colours, the gap column, the bottom row */
-	int gain;
-} subPresets[3] = {
-	{ 0.80f, 0.80f, 0.92f, 112 }, /* light: for dim screens (about 0.9 of the picture's brightness) */
-	{ 0.62f, 0.65f, 0.85f, 125 }, /* (about 0.8) */
-	{ 0.45f, 0.50f, 0.75f, 140 }, /* strong: for bright screens (about 0.7) */
-};
 void ui_shader(int sh) {
 	uiShader = sh >= 0 && sh < SH_COUNT ? sh : SH_OFF;
-	ccGain = uiShader >= SH_SUB_LIGHT ? subPresets[uiShader - SH_SUB_LIGHT].gain : 100;
+	ccGain = 100;
 	cc_refresh();
 }
 uint32_t ui_color_correct(uint32_t p) {
@@ -1857,108 +1849,23 @@ static SDL_Texture* pipe_target(int v, int w, int h) {
 	return e->tex;
 }
 
-/* A multiply mask: each source pixel becomes a k x k cell whose right column
- * and bottom row are darkened, like the gaps between LCD pixels. Built once. */
-static SDL_Texture* pipe_grid(int v, int w, int h, int k, int strength) {
-	strength = strength < 0 ? 0 : strength > 100 ? 100 : strength;
-	bool hit;
-	PipeEntry* e = pipe_lookup(pipeGrids[v], w, h, k, strength, &hit);
-	if (hit) return e->tex;
-	SDL_Surface* s = SDL_CreateRGBSurfaceWithFormat(0, w * k, h * k, 32, SDL_PIXELFORMAT_ARGB8888);
-	if (!s) return NULL;
-	Uint8 line = (Uint8) (255 * (100 - strength) / 100);
-	Uint8 soft = (Uint8) (255 * (100 - strength / 3) / 100); /* top/left edge: a lighter line for depth */
-	for (int y = 0; y < h * k; ++y) {
-		Uint32* row = (Uint32*) ((Uint8*) s->pixels + y * s->pitch);
-		int cy = y % k;
-		for (int x = 0; x < w * k; ++x) {
-			int cx = x % k;
-			Uint8 c = 255;
-			if (cx == k - 1 || cy == k - 1) c = line;
-			else if (k >= 5 && (cx == 0 || cy == 0)) c = soft;
-			row[x] = 0xFF000000u | (c << 16) | (c << 8) | c;
-		}
-	}
-	e->tex = SDL_CreateTextureFromSurface(views[v].ren, s);
-	SDL_FreeSurface(s);
-	if (e->tex) {
-		SDL_SetTextureBlendMode(e->tex, SDL_BLENDMODE_MOD);
-		SDL_SetTextureScaleMode(e->tex, SDL_ScaleModeNearest);
-	}
-	return e->tex;
-}
-
-/* Total gap length in [0, t): cells of size p whose last g * p is gap. */
-static double gap_upto(double t, double p, double g) {
-	double n = floor(t / p), r = t - n * p, edge = (1 - g) * p;
-	return n * g * p + (r > edge ? r - edge : 0);
-}
-
-/* The LCD grid for small cells (under 3 screen pixels, e.g. 2x on a 640x480
- * screen), made at the screen's own resolution: gw x gh cells over a
- * dw x dh picture, the gap between cells a quarter of a cell wide (as at 4x),
- * and each screen pixel darkened by how much of it the gap covers. Same
- * overall darkness and texture as the 4x grid, without the blur and uneven
- * lines of drawing a 3x grid and scaling it down. Built once. */
-static SDL_Texture* pipe_grid_fine(int v, int dw, int dh, int gw, int gh, int strength) {
-	strength = strength < 0 ? 0 : strength > 100 ? 100 : strength;
-	bool hit;
-	PipeEntry* e = pipe_lookup(pipeGrids[v], dw, dh, -(gw << 12 | gh), strength, &hit);
-	if (hit) return e->tex;
-	SDL_Surface* s = SDL_CreateRGBSurfaceWithFormat(0, dw, dh, 32, SDL_PIXELFORMAT_ARGB8888);
-	if (!s) return NULL;
-	const double g = 0.25;
-	double px = (double) dw / gw, py = (double) dh / gh;
-	float* cx = malloc(sizeof(float) * (size_t) dw);
-	if (!cx) {
-		SDL_FreeSurface(s);
-		return NULL;
-	}
-	for (int x = 0; x < dw; ++x) cx[x] = (float) (gap_upto(x + 1, px, g) - gap_upto(x, px, g));
-	double k = strength / 100.0;
-	for (int y = 0; y < dh; ++y) {
-		double cy = gap_upto(y + 1, py, g) - gap_upto(y, py, g);
-		Uint32* row = (Uint32*) ((Uint8*) s->pixels + y * s->pitch);
-		for (int x = 0; x < dw; ++x) {
-			double cover = cx[x] + cy - cx[x] * cy; /* share of the pixel in either line */
-			Uint8 c = (Uint8) (255 * (1 - k * cover) + 0.5);
-			row[x] = 0xFF000000u | (c << 16) | (c << 8) | c;
-		}
-	}
-	free(cx);
-	e->tex = SDL_CreateTextureFromSurface(views[v].ren, s);
-	SDL_FreeSurface(s);
-	if (e->tex) {
-		SDL_SetTextureBlendMode(e->tex, SDL_BLENDMODE_MOD);
-		SDL_SetTextureScaleMode(e->tex, SDL_ScaleModeNearest);
-	}
-	return e->tex;
-}
-
 /* One of the other shaders' patterns at a point in a cell (u, v in 0..1,
  * across and down), as a multiplier for red, green and blue. */
 static void pattern_at(int sh, double u, double v, double k, float out[3]) {
 	out[0] = out[1] = out[2] = 1;
-	if (sh == SH_SCANLINES) {
-		/* the bottom quarter of each row of pixels, darker than the grid's
-		 * lines (there are half as many), as SwanStation's Scanlines at its 0.5 */
-		if (v >= 0.75) out[0] = out[1] = out[2] = (float) (1 - SDL_min(1.0, k * 1.4));
-	} else if (sh == SH_SOFT) {
-		/* darker toward the cell's edges, most at the corners: zfast_lcd's
-		 * falloff (RetroArch's handheld/zfast-lcd) */
-		double d = 2 * SDL_max(fabs(u - 0.5), fabs(v - 0.5));
-		out[0] = out[1] = out[2] = (float) (1 - SDL_min(1.0, k * 1.3) * d * d * d * d);
-	} else if (sh >= SH_SUB_LIGHT && sh <= SH_SUB_STRONG) {
-		/* red, green and blue stripes and a gap, a quarter of the cell each
-		 * (one screen pixel each at 4x), and a darker bottom row: SwanStation's
-		 * AGB-001 and RetroArch's lcd3x */
-		int p = sh - SH_SUB_LIGHT, col = (int) (u * 4);
-		if (col >= 3) {
-			out[0] = out[1] = out[2] = subPresets[p].gap;
-		} else {
-			for (int c = 0; c < 3; ++c) out[c] = c == col ? 1.0f : subPresets[p].other;
-		}
-		if (v >= 0.75) for (int c = 0; c < 3; ++c) out[c] *= subPresets[p].row;
+	if (sh == SH_SCANLINES || sh == SH_SHADOWMASK || sh == SH_COMPOSITE) {
+		/* a TV's scanlines: the gap between the PS1's rows, the lower part
+		 * of each (soft-edged), fainter for composite */
+		double depth = sh == SH_COMPOSITE ? 0.45 : 1.0;
+		double dark = v < 0.5 ? 0 : v < 0.62 ? (v - 0.5) / 0.12 : 1;
+		float f = (float) (1 - SDL_min(1.0, k * 0.85 * depth) * dark);
+		out[0] = out[1] = out[2] = f;
+	}
+	if (sh == SH_SHADOWMASK) {
+		/* the shadow mask's red, green and blue dots: a third of each pixel */
+		int col = (int) (u * 3);
+		float other = (float) (1 - SDL_min(1.0, k) * 0.45);
+		for (int c = 0; c < 3; ++c) if (c != col) out[c] *= other;
 	}
 }
 
@@ -2012,12 +1919,7 @@ static SDL_Texture* pipe_pattern(int v, int dw, int dh, int gw, int gh, int sh, 
  * screen pixels per cell when the picture is drawn at a whole multiple
  * (the grid then draws its lines a whole screen pixel each), else 0. */
 static SDL_Texture* shader_mask(int v, int dw, int dh, int gw, int gh, int kc) {
-	bool small = dw < gw * 3 || dh < gh * 3;
-	if (cfg->shader == SH_GRID || cfg->shader <= SH_OFF || cfg->shader >= SH_COUNT || (cfg->shader == SH_SOFT && small)) {
-		/* (soft cells have no room for their falloff in under 3 screen
-		 * pixels: the fine grid there) */
-		return kc > 0 && !(cfg->shader == SH_SOFT && small) ? pipe_grid(v, gw, gh, kc, cfg->lcdStrength) : pipe_grid_fine(v, dw, dh, gw, gh, cfg->lcdStrength);
-	}
+	(void) kc;
 	return pipe_pattern(v, dw, dh, gw, gh, cfg->shader, cfg->lcdStrength);
 }
 
@@ -2058,6 +1960,14 @@ static void draw_pixels(SDL_Renderer* ren, int v, SDL_Texture* src, int w, int h
 	bool exact = dst.w == w * k && dst.h == h * k;
 	int c = lcd > 1 ? lcd : 1; /* source pixels per grid cell, each way */
 	int gw = w / c, gh = h / c;
+	if (lcd && (cfg->shader == SH_SMOOTH || cfg->shader == SH_COMPOSITE)) {
+		/* smooth scaling; composite: that, with faint scanlines on top */
+		SDL_SetTextureScaleMode(src, SDL_ScaleModeLinear);
+		SDL_RenderCopy(ren, src, NULL, &dst);
+		SDL_Texture* mask = cfg->shader == SH_COMPOSITE ? shader_mask(v, dst.w, dst.h, gw, gh, 0) : NULL;
+		if (mask) SDL_RenderCopy(ren, mask, NULL, &dst);
+		return;
+	}
 	if (!lcd && (exact || cfg->smooth)) {
 		SDL_SetTextureScaleMode(src, cfg->smooth ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
 		SDL_RenderCopy(ren, src, NULL, &dst);
@@ -2722,8 +2632,10 @@ static const SDL_Color accBase[AC_COUNT] = {
 	[AC_LIT_BORDER] = { 60, 40, 110, 255 }, [AC_LIT_HI] = { 188, 166, 240, 255 }, [AC_LIT_LO] = { 154, 130, 216, 255 },
 	[AC_LIT_EDGE] = { 75, 58, 130, 255 },
 };
-static const struct { const char* id; float hue; } accents[ACCENT_COUNT] = {
-	{ "purple", 268 }, { "blue", 215 }, { "teal", 175 }, { "green", 135 }, { "red", 352 }, { "orange", 24 }, { "pink", 322 },
+/* (psx: the PlayStation's own menus, charcoal and slate, the colours turned
+ * nearly grey, with Cross's blue for the highlight) */
+static const struct { const char* id; float hue, sat; } accents[ACCENT_COUNT] = {
+	{ "psx", 220, 0.22f }, { "purple", 268, 1 }, { "blue", 215, 1 }, { "teal", 175, 1 }, { "green", 135, 1 }, { "red", 352, 1 }, { "orange", 24, 1 }, { "pink", 322, 1 },
 };
 
 static void rgb_to_hsl(SDL_Color c, float* h, float* s, float* l) {
@@ -2757,16 +2669,17 @@ static float contrast(SDL_Color a, SDL_Color b) {
 static SDL_Color accent_turn(SDL_Color c, float shift, float lScale) {
 	float h, s, l;
 	rgb_to_hsl(c, &h, &s, &l);
-	return hsl_to_rgb(h + shift, s, SDL_min(1.f, l * lScale), c.a);
+	return hsl_to_rgb(h + shift, s * accents[accentIdx].sat, SDL_min(1.f, l * lScale), c.a);
 }
 
 static void accent_build(void) {
-	float shift = accents[accentIdx].hue - accents[0].hue;
+	float shift = accents[accentIdx].hue - 268; /* (the base colours are purple's) */
+	bool psx = !strcmp(accents[accentIdx].id, "psx");
 	/* the selected key's family: a lightness scale small enough for white text and the highlight to read on its body */
 	float f = themeLight ? 0.92f : 1.f;
 	SDL_Color hi, hiInk;
-	hi = hsl_to_rgb(accents[accentIdx].hue, 0.85f, 0.80f, 255);
-	hiInk = hsl_to_rgb(accents[accentIdx].hue, 0.80f, 0.24f, 255);
+	hi = psx ? (SDL_Color) { 124, 178, 232, 255 } : hsl_to_rgb(accents[accentIdx].hue, 0.85f, 0.80f, 255);
+	hiInk = psx ? (SDL_Color) { 16, 44, 86, 255 } : hsl_to_rgb(accents[accentIdx].hue, 0.80f, 0.24f, 255);
 	SDL_Color white = { 255, 255, 255, 255 };
 	for (;;) {
 		SDL_Color body = accent_turn(accBase[AC_SEL_LO], shift, f);
@@ -2775,7 +2688,7 @@ static void accent_build(void) {
 	}
 	for (int i = 0; i < AC_COUNT; ++i) {
 		bool sel = i == AC_BTN_SEL || i == AC_SEL_MID || i == AC_SEL_HI || i == AC_SEL_LO || i == AC_SEL_EDGE || i == AC_SEL_BORDER || i == AC_SEL_RING;
-		accentSet[i] = !accentIdx && !themeLight ? accBase[i] : accent_turn(accBase[i], shift, sel ? f : 1.f);
+		accentSet[i] = !strcmp(accents[accentIdx].id, "purple") && !themeLight ? accBase[i] : accent_turn(accBase[i], shift, sel ? f : 1.f);
 	}
 	accentSet[AC_HI] = hi;
 	accentSet[AC_HI_INK] = hiInk;

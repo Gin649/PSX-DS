@@ -78,6 +78,8 @@ typedef struct Slot {
 	size_t ringHead, ringCount;
 
 	char save[1024]; /* the memory card file, written back on close */
+	struct retro_disk_control_callback disc; /* the core's disc swapping (.m3u, multi-disc .pbp) */
+	bool hasDisc;
 } Slot;
 
 static Slot slots[SLOTS];
@@ -283,8 +285,12 @@ static bool env_slot(int i, unsigned cmd, void* data) {
 	case RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS:
 	case RETRO_ENVIRONMENT_SET_MESSAGE:
 	case RETRO_ENVIRONMENT_SET_GEOMETRY:
+		return true;
 	case RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE:
 	case RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE:
+		/* (the extended interface starts with the same callbacks) */
+		memcpy(&s->disc, data, sizeof s->disc);
+		s->hasDisc = true;
 		return true;
 	default:
 		return false;
@@ -803,3 +809,25 @@ const uint16_t* emu_vram(Emu* e) { (void)e; return noVram; }
 void emu_vram_write(Emu* e, uint32_t off, const void* src, size_t n) { (void)e; (void)off; (void)src; (void)n; }
 void emu_oam_read(Emu* e, uint16_t* out) { (void)e; memset(out, 0, 1024); }
 void emu_oam_write(Emu* e, const uint16_t* src) { (void)e; (void)src; }
+
+/* --- discs ------------------------------------------------------------------------------ */
+
+int emu_disc_count(Emu* e) {
+	Slot* s = S(e);
+	return s && s->hasDisc && s->disc.get_num_images ? (int)s->disc.get_num_images() : 1;
+}
+
+int emu_disc_index(Emu* e) {
+	Slot* s = S(e);
+	return s && s->hasDisc && s->disc.get_image_index ? (int)s->disc.get_image_index() : 0;
+}
+
+/* Opens the lid, puts in disc i (from 0) and closes it, as on a PlayStation. */
+bool emu_disc_set(Emu* e, int i) {
+	Slot* s = S(e);
+	if (!s || !s->hasDisc || i < 0 || i >= emu_disc_count(e)) return false;
+	if (!s->disc.set_eject_state || !s->disc.set_image_index) return false;
+	bool ok = s->disc.set_eject_state(true);
+	ok = ok && s->disc.set_image_index((unsigned)i);
+	return s->disc.set_eject_state(false) && ok;
+}

@@ -85,6 +85,11 @@ typedef struct Emu {
 void emu_set_dualshock(bool on);
 /* The DualShock's sticks for the next frames: left X, left Y, right X, right Y. */
 void emu_set_sticks(Emu* e, const int16_t axes[4]);
+/* Multi-disc games (.m3u, multi-disc .pbp): how many discs, which is in (from
+ * 0), and changing it (the lid opened and closed). One disc: 1 and 0. */
+int emu_disc_count(Emu* e);
+int emu_disc_index(Emu* e);
+bool emu_disc_set(Emu* e, int i);
 
 /* savePath may be NULL (no battery save attached). */
 bool emu_open(Emu* e, const char* romPath, const char* savePath, bool audio);
