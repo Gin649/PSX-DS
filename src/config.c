@@ -64,7 +64,7 @@ void config_defaults(Config* c) {
 	strcpy(c->raMode, "auto");
 	strcpy(c->raSystemCfg, "/storage/.config/system/configs/system.cfg");
 	c->homeButton = -1;
-	c->leftStickDpad = true;
+	c->leftStickDpad = false; /* (the DualShock's left stick is the game's own) */
 	c->turboRate = 15;
 	c->brightTop = c->brightBottom = 100;
 	c->lcdStrength = 35;
@@ -230,6 +230,7 @@ static bool set_option(Config* c, const char* key, const char* val) {
 	BOOL("quick_bar_pinned", barPinned)
 	BOOL("quick_bar_hint", barHint)
 	BOOL("show_all", showAll)
+	INT("pad_type", padType)
 	BOOL("left_stick_dpad", leftStickDpad)
 	STR("accent", accent)
 	if (!strcmp(key, "theme")) {
@@ -240,8 +241,8 @@ static bool set_option(Config* c, const char* key, const char* val) {
 	INT("brightness_top", brightTop)
 	INT("brightness_bottom", brightBottom)
 	if (!strncmp(key, "button_", 7)) {
-		static const char* const faces[10] = { "right", "bottom", "top", "left", "l", "r", "dpad_up", "dpad_down", "dpad_left", "dpad_right" };
-		for (int i = 0; i < 10; ++i) {
+		static const char* const faces[14] = { "right", "bottom", "top", "left", "l", "r", "dpad_up", "dpad_down", "dpad_left", "dpad_right", "l2", "r2", "l3", "r3" };
+		for (int i = 0; i < 14; ++i) {
 			if (strcmp(key + 7, faces[i])) continue;
 			snprintf(c->faceBtn[i], sizeof(c->faceBtn[i]), "%s", val);
 			for (char* q = c->faceBtn[i]; *q; ++q) *q = (char) tolower((unsigned char) *q);
@@ -280,8 +281,8 @@ static const char* const perGameKeys[] = {
 	"bezel_outer", "shader", "lcd_strength", "color_correction", "lcd_ghosting", "frame_buffer", "match_display", "map",
 	"map_interval", "custom_logos", "pinball_live", "rewind", "rewind_seconds",
 	"fast_forward", "ff_speed", "ab_swap", "show_fps", "audio_latency", "screen_match", "screen_placement",
-	"save_on_quit", "auto_load", "left_stick_dpad", "turbo_rate", "brightness_top", "brightness_bottom", "button_right", "button_bottom", "button_top", "button_left",
-	"button_l", "button_r", "button_dpad_up", "button_dpad_down", "button_dpad_left", "button_dpad_right",
+	"save_on_quit", "auto_load", "pad_type", "left_stick_dpad", "turbo_rate", "brightness_top", "brightness_bottom", "button_right", "button_bottom", "button_top", "button_left",
+	"button_l", "button_r", "button_dpad_up", "button_dpad_down", "button_dpad_left", "button_dpad_right", "button_l2", "button_r2", "button_l3", "button_r3",
 };
 
 bool config_key_per_game(const char* key) {
@@ -449,11 +450,13 @@ static const SettingChoice chMatch[] = { { "keep", "Keep device shapes", 0 }, { 
 static const SettingChoice chPlace[] = { { "center", "Centered", 0 }, { "no_gap", "Closest to gap", 0 } };
 static const SettingChoice chOverlays[] = { { N_("off"), "Off", OVM_OFF }, { "generated", "Generated", OVM_GENERATED }, { "custom", "Custom", OVM_CUSTOM } };
 static const SettingChoice chOvlScreens[] = { { "both", "Both screens", OVL_BOTH }, { "top", "Top screen", OVL_TOP }, { "bottom", "Bottom screen", OVL_BOTTOM } };
-static const SettingChoice chAB[] = { { "0", "Like an LCD", 0 }, { "1", "Swapped", 1 } };
+static const SettingChoice chPad[] = { { "0", "DualShock", 0 }, { "1", "DualShock, analog by combo", 1 }, { "2", "Digital pad", 2 } };
+static const SettingChoice chAB[] = { { "0", "Cross", 0 }, { "1", "Circle", 1 } };
 static const SettingChoice chFace[] = {
-	{ "a", "PS1 Circle", 0 }, { "b", "PS1 Cross", 0 }, { "l", "PS1 L1", 0 }, { "r", "PS1 R1", 0 },
-	{ "up", "PS1 Up", 0 }, { "down", "PS1 Down", 0 }, { "left", "PS1 Left", 0 }, { "right", "PS1 Right", 0 }, { "start", "Start", 0 },
-	{ "select", "Select", 0 }, { "turbo_a", "Turbo A", 0 }, { "turbo_b", "Turbo B", 0 }, { "none", "Nothing", 0 },
+	{ "a", "Circle", 0 }, { "b", "Cross", 0 }, { "triangle", "Triangle", 0 }, { "square", "Square", 0 },
+	{ "l", "L1", 0 }, { "r", "R1", 0 }, { "l2", "L2", 0 }, { "r2", "R2", 0 }, { "l3", "L3", 0 }, { "r3", "R3", 0 },
+	{ "up", "Up", 0 }, { "down", "Down", 0 }, { "left", "Left", 0 }, { "right", "Right", 0 }, { "start", "Start", 0 },
+	{ "select", "Select", 0 }, { "turbo_a", "Turbo Circle", 0 }, { "turbo_b", "Turbo Cross", 0 }, { "none", "Nothing", 0 },
 };
 static const SettingChoice chTurbo[] = { { "10", "Slow (10 a second)", 10 }, { "15", "Medium (15 a second)", 15 }, { "20", "Fast (20 a second)", 20 } };
 static const SettingChoice chFF[] = { { N_("off"), "Off", 0 }, { "2", "2x", 2 }, { "3", "3x", 3 }, { "4", "4x", 4 }, { "5", "5x", 5 }, { "max", "As fast as it goes", 0 } };
@@ -493,25 +496,30 @@ static const Setting settingsTable[] = {
 	{ "accent", "Color", SF_STR, OFFB(accent), ARR(chAccent), 0, 0, 0, NULL, "The menus' color for what's selected, with a dark and a light version of each." },
 	{ "brightness_top", "Top screen brightness", SF_INT, OFFB(brightTop), NULL, 0, 20, 100, 10, "%", "Darkens the top screen, in this app only: the device's own brightness is left alone (and this can't go above it)." },
 	{ "brightness_bottom", "Bottom screen brightness", SF_INT, OFFB(brightBottom), NULL, 0, 20, 100, 10, "%", "Darkens the bottom screen, in this app only: the device's own brightness is left alone (and this can't go above it)." },
-	{ "left_stick_dpad", "Left stick as D-pad", SF_BOOL, OFFB(leftStickDpad), ARR(chOnOff), 0, 0, 0, NULL, "Off: the left stick does nothing in games." },
-	{ "ab_swap", "A and B buttons", SF_BOOL, OFFB(abSwap), ARR(chAB), 0, 0, 0, NULL, "PS1 Circle on the right button, or on the bottom one." },
-	{ "button_right", "A (right) button", SF_STR, OFFB(faceBtn[0]), ARR(chFace), 0, 0, 0, NULL, "What the right face button gives the game." },
-	{ "button_bottom", "B (bottom) button", SF_STR, OFFB(faceBtn[1]), ARR(chFace), 0, 0, 0, NULL, "What the bottom face button gives the game." },
-	{ "button_top", "X (top) button", SF_STR, OFFB(faceBtn[2]), ARR(chFace), 0, 0, 0, NULL, "What the top face button gives the game." },
-	{ "button_left", "Y (left) button", SF_STR, OFFB(faceBtn[3]), ARR(chFace), 0, 0, 0, NULL, "What the left face button gives the game." },
-	{ "button_l", "L button", SF_STR, OFFB(faceBtn[4]), ARR(chFace), 0, 0, 0, NULL, "What the L shoulder button gives the game." },
-	{ "button_r", "R button", SF_STR, OFFB(faceBtn[5]), ARR(chFace), 0, 0, 0, NULL, "What the R shoulder button gives the game." },
+	{ "pad_type", "Controller", SF_INT, OFFB(padType), ARR(chPad), 0, 0, 0, NULL, "DualShock: both sticks, analog on from the start. By combo: analog switched on and off with L1 + R1 + L3 + R3, for games that don't like it. Digital pad: the first PlayStation pad, no sticks. Takes effect when a game starts." },
+	{ "left_stick_dpad", "Left stick as D-pad", SF_BOOL, OFFB(leftStickDpad), ARR(chOnOff), 0, 0, 0, NULL, "The left stick also presses the D-pad in games (for games without analog control)." },
+	{ "ab_swap", "Confirm button", SF_BOOL, OFFB(abSwap), ARR(chAB), 0, 0, 0, NULL, "The button that selects in PSX-DS's menus (the other goes back). Circle is the Japanese way. Games keep their own." },
+	{ "button_right", "Right button (Circle)", SF_STR, OFFB(faceBtn[0]), ARR(chFace), 0, 0, 0, NULL, "What the right face button gives the game." },
+	{ "button_bottom", "Bottom button (Cross)", SF_STR, OFFB(faceBtn[1]), ARR(chFace), 0, 0, 0, NULL, "What the bottom face button gives the game." },
+	{ "button_top", "Top button (Triangle)", SF_STR, OFFB(faceBtn[2]), ARR(chFace), 0, 0, 0, NULL, "What the top face button gives the game." },
+	{ "button_left", "Left button (Square)", SF_STR, OFFB(faceBtn[3]), ARR(chFace), 0, 0, 0, NULL, "What the left face button gives the game." },
+	{ "button_l", "L1 button", SF_STR, OFFB(faceBtn[4]), ARR(chFace), 0, 0, 0, NULL, "What the L1 shoulder button gives the game." },
+	{ "button_r", "R1 button", SF_STR, OFFB(faceBtn[5]), ARR(chFace), 0, 0, 0, NULL, "What the R1 shoulder button gives the game." },
+	{ "button_l2", "L2 button", SF_STR, OFFB(faceBtn[10]), ARR(chFace), 0, 0, 0, NULL, "What the L2 trigger gives the game." },
+	{ "button_r2", "R2 button", SF_STR, OFFB(faceBtn[11]), ARR(chFace), 0, 0, 0, NULL, "What the R2 trigger gives the game." },
+	{ "button_l3", "L3 button", SF_STR, OFFB(faceBtn[12]), ARR(chFace), 0, 0, 0, NULL, "What pressing the left stick gives the game." },
+	{ "button_r3", "R3 button", SF_STR, OFFB(faceBtn[13]), ARR(chFace), 0, 0, 0, NULL, "What pressing the right stick gives the game." },
 	{ "button_dpad_up", "D-pad up", SF_STR, OFFB(faceBtn[6]), ARR(chFace), 0, 0, 0, NULL, "What D-pad up gives the game." },
 	{ "button_dpad_down", "D-pad down", SF_STR, OFFB(faceBtn[7]), ARR(chFace), 0, 0, 0, NULL, "What D-pad down gives the game." },
 	{ "button_dpad_left", "D-pad left", SF_STR, OFFB(faceBtn[8]), ARR(chFace), 0, 0, 0, NULL, "What D-pad left gives the game." },
 	{ "button_dpad_right", "D-pad right", SF_STR, OFFB(faceBtn[9]), ARR(chFace), 0, 0, 0, NULL, "What D-pad right gives the game." },
-	{ "turbo_rate", "Turbo speed", SF_INT, OFFB(turboRate), ARR(chTurbo), 0, 0, 0, NULL, "How fast Turbo A and Turbo B press." },
+	{ "turbo_rate", "Turbo speed", SF_INT, OFFB(turboRate), ARR(chTurbo), 0, 0, 0, NULL, "How fast Turbo Circle and Turbo Cross press." },
 
 	{ "match_display", "Match display rate", SF_BOOL, OFFB(matchDisplay), ARR(chOnOff), 0, 0, 0, NULL, "Run at the display's rate: no small regular stutter." },
 	{ "frame_buffer", "Frame buffer", SF_BOOL, OFFB(frameBuffer), ARR(chOnOff), 0, 0, 0, NULL, "Smoother, one frame more input delay." },
-	{ "rewind", "Rewind", SF_BOOL, OFFB(rewind), ARR(chOnOff), 0, 0, 0, NULL, "Hold L2 to go back in time." },
+	{ "rewind", "Rewind", SF_BOOL, OFFB(rewind), ARR(chOnOff), 0, 0, 0, NULL, "Hold the hotkey button and L2 to go back in time." },
 	{ "rewind_seconds", "Rewind length", SF_INT, OFFB(rewindSeconds), ARR(chRewind), 0, 0, 0, N_(" s"), "How far back it goes." },
-	{ "fast_forward", "Fast forward", SF_FF, OFFB(fastForward), ARR(chFF), 0, 0, 0, NULL, "Hold R2 to play faster." },
+	{ "fast_forward", "Fast forward", SF_FF, OFFB(fastForward), ARR(chFF), 0, 0, 0, NULL, "Hold the hotkey button and R2 to play faster." },
 	{ "audio_latency", "Sound delay", SF_INT, OFFB(audioLatency), ARR(chLatency), 0, 0, 0, N_(" ms"), "Raise it if the sound crackles." },
 	{ "performance", "Performance", SF_BOOL, OFFB(perfMax), ARR(chPerf), 0, 0, 0, NULL, "Max: full speed, a warmer device and a shorter battery." },
 
@@ -526,10 +534,11 @@ const Setting* config_setting(const char* key) {
 	return NULL;
 }
 
-/* what a face button gives the game with nothing chosen: ab_swap's layout */
+/* what a button gives the game with nothing chosen: the PlayStation's own */
 static const char* face_default(const Config* c, int i) {
-	static const char* const own[10] = { "a", "b", "none", "none", "l", "r", "up", "down", "left", "right" };
-	return i == 0 ? (c->abSwap ? "b" : "a") : i == 1 ? (c->abSwap ? "a" : "b") : own[i];
+	(void)c;
+	static const char* const own[14] = { "a", "b", "triangle", "square", "l", "r", "up", "down", "left", "right", "l2", "r2", "l3", "r3" };
+	return own[i];
 }
 
 int config_setting_index(const Config* c, const Setting* s) {

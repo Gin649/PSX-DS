@@ -109,9 +109,10 @@ typedef struct Config {
 	int brightTop, brightBottom; /* this app's brightness for each screen, 20..100 (brightness_top / _bottom, issue #56): a dimming layer, not the system's */
 	char accent[16];      /* the menus' colour: purple | blue | teal | green | red | orange | pink (accent) */
 	bool lightTheme;      /* the light theme for the menus' buttons (theme = light) */
+	int padType;          /* 0 DualShock, analog from the start; 1 DualShock, analog with L1 + R1 + L3 + R3; 2 digital pad (pad_type) */
 	bool leftStickDpad;   /* the left stick also presses the D-pad in games (left_stick_dpad, issue #57) */
 	int turboRate;        /* Turbo A / Turbo B: presses a second, 10, 15 or 20 (turbo_rate, issue #55) */
-	char faceBtn[10][12]; /* what each button gives the game (button_right, _bottom, _top, _left, _l, _r, _dpad_up, _dpad_down, _dpad_left, _dpad_right: a, b, l, r, up, down, left, right, start, select, turbo_a, turbo_b, none); empty: the PS1's own (ab_swap's for A and B) */
+	char faceBtn[14][12]; /* what each button gives the game (button_right, _bottom, _top, _left, _l, _r, _dpad_up, _dpad_down, _dpad_left, _dpad_right, _l2, _r2, _l3, _r3: a (Circle), b (Cross), triangle, square, l, r, l2, r2, l3, r3, up, down, left, right, start, select, turbo_a, turbo_b, none); empty: the PlayStation's own */
 	/* RetroAchievements (casual mode): auto = on when ROCKNIX has an account
 	 * signed in (EmulationStation's RetroAchievements settings), 1, 0 */
 	char raMode[8];

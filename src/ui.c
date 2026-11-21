@@ -4,6 +4,7 @@
 /* the left stick presses the D-pad (issue #57): game.c turns it off for a game
  * with left_stick_dpad = 0, and on again for its menus and the game list */
 static bool stickDpad = true;
+int16_t padAxes[4];
 void ui_stick_dpad(bool on) {
 	stickDpad = on;
 }
@@ -114,7 +115,7 @@ static void script_joy(const char* a);
 static void script_virtual_pad(void);
 
 static uint32_t parse_btns(const char* s) {
-	static const char* names[B_COUNT] = { "A", "B", "X", "Y", "START", "SELECT", "HOME", "L", "R", "L2", "R2", "L3",
+	static const char* names[B_COUNT] = { "A", "B", "X", "Y", "START", "SELECT", "HOME", "L", "R", "L2", "R2", "L3", "R3",
 		                                  "UP", "DOWN", "LEFT", "RIGHT" };
 	uint32_t m = 0;
 	char buf[128];
@@ -1160,6 +1161,7 @@ void ui_read_buttons(void) {
 	memset(btnNow, 0, sizeof(btnNow));
 	bool phys[SDL_CONTROLLER_BUTTON_MAX] = { 0 };
 	bool l2 = false, r2 = false;
+	int axesNow[4] = { 0 };
 	for (int p = 0; p < 8; ++p) {
 		SDL_GameController* gc = pads[p];
 		if (!gc) continue;
@@ -1192,6 +1194,11 @@ void ui_read_buttons(void) {
 #endif
 		int lx = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTX);
 		int ly = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTY);
+		{ /* the sticks for the DualShock: the pad pushed furthest wins */
+			int ax[4] = { lx, ly, SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_RIGHTX), SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_RIGHTY) };
+			for (int k = 0; k < 4; ++k)
+				if (abs(ax[k]) > abs(axesNow[k])) axesNow[k] = ax[k];
+		}
 		if (stickDpad) { /* (left_stick_dpad: off in a game, the stick does nothing there) */
 			if (lx < -16000) phys[SDL_CONTROLLER_BUTTON_DPAD_LEFT] = true;
 			if (lx > 16000) phys[SDL_CONTROLLER_BUTTON_DPAD_RIGHT] = true;
@@ -1207,8 +1214,11 @@ void ui_read_buttons(void) {
 		}
 	}
 	/* PS1-style: A is the right face button, B the bottom one */
-	btnNow[B_A] = cfg->abSwap ? phys[SDL_CONTROLLER_BUTTON_A] : phys[SDL_CONTROLLER_BUTTON_B];
-	btnNow[B_B] = cfg->abSwap ? phys[SDL_CONTROLLER_BUTTON_B] : phys[SDL_CONTROLLER_BUTTON_A];
+	/* B_A confirms, B_B goes back: Cross (bottom, SDL "A") and Circle (right,
+	 * SDL "B") as on a Western PlayStation; ab_swap: the other way, as in Japan */
+	btnNow[B_A] = cfg->abSwap ? phys[SDL_CONTROLLER_BUTTON_B] : phys[SDL_CONTROLLER_BUTTON_A];
+	btnNow[B_B] = cfg->abSwap ? phys[SDL_CONTROLLER_BUTTON_A] : phys[SDL_CONTROLLER_BUTTON_B];
+	for (int k = 0; k < 4; ++k) padAxes[k] = (int16_t) SDL_clamp(axesNow[k], -32768, 32767);
 	btnNow[B_X] = phys[SDL_CONTROLLER_BUTTON_X];
 	btnNow[B_Y] = phys[SDL_CONTROLLER_BUTTON_Y];
 	btnNow[B_START] = phys[SDL_CONTROLLER_BUTTON_START];
@@ -1219,6 +1229,7 @@ void ui_read_buttons(void) {
 	btnNow[B_L2] = l2;
 	btnNow[B_R2] = r2;
 	btnNow[B_L3] = phys[SDL_CONTROLLER_BUTTON_LEFTSTICK];
+	btnNow[B_R3] = phys[SDL_CONTROLLER_BUTTON_RIGHTSTICK];
 	btnNow[B_UP] = phys[SDL_CONTROLLER_BUTTON_DPAD_UP];
 	btnNow[B_DOWN] = phys[SDL_CONTROLLER_BUTTON_DPAD_DOWN];
 	btnNow[B_LEFT] = phys[SDL_CONTROLLER_BUTTON_DPAD_LEFT];

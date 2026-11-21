@@ -7,7 +7,7 @@
 #include <string.h>
 #include <strings.h>
 
-const char* const hotkeyBtnNames[B_COUNT] = { "a", "b", "x", "y", "start", "select", "home", "l", "r", "l2", "r2", "l3",
+const char* const hotkeyBtnNames[B_COUNT] = { "a", "b", "x", "y", "start", "select", "home", "l", "r", "l2", "r2", "l3", "r3",
 	                                          "up", "down", "left", "right" };
 /* as players know them (the device's names, as in the wiki's Buttons table;
  * Android keeps HOME for itself, and BACK stands in for it) */
@@ -16,7 +16,7 @@ const char* const hotkeyBtnNames[B_COUNT] = { "a", "b", "x", "y", "start", "sele
 #else
 #define HOME_TITLE "Home"
 #endif
-static const char* const btnTitles[B_COUNT] = { "A", "B", "X", "Y", "Start", "Select", HOME_TITLE, "L1", "R1", "L2", "R2", "L3",
+static const char* const btnTitles[B_COUNT] = { "Cross", "Circle", "Triangle", "Square", "Start", "Select", HOME_TITLE, "L1", "R1", "L2", "R2", "L3", "R3",
 	                                            N_("Up"), N_("Down"), N_("Left"), N_("Right")};
 static const char* const actionTitles[HK_COUNT] = { "Quit", N_("Quick save state"), N_("Quick load state"), N_("Open quick menu"), N_("Swap screens"),
                                                     N_("Toggle selected shader")};
@@ -132,7 +132,7 @@ static void draw(int scr, const View_* v) {
 	} else if (v->sel == R_MOD) {
 		foot = N_("Select or Start still reach the game when tapped on their own, L3 still opens the quick menu");
 	} else if (v->sel == R_RESET) {
-		snprintf(line, sizeof(line), tr("%s as the hotkey button, with Start, R1, L1, X, Y and B"), HOME_TITLE), foot = line;
+		snprintf(line, sizeof(line), tr("%s as the hotkey button, with Start, R1, L1, Triangle, Square and Circle"), HOME_TITLE), foot = line;
 	} else if (v->sel == R_DONE) {
 		foot = N_("Kept for every game");
 	}

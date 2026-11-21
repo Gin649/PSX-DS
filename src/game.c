@@ -550,7 +550,7 @@ static void twin_first_carry(Twin* tw) {
 	emu_write16(&tw->e, C->cam, (uint16_t) tw->cam);
 	bool fresh = !tw->carried;
 	/* (not drawn: only its second frame's picture is shown) */
-	emu_frame_blind(&tw->e, twinKeys[twinCur] & 0x3FF);
+	emu_frame_blind(&tw->e, twinKeys[twinCur] & 0xFFFF);
 	carry_take(tw);
 	/* (starting again: its own sprites are the ones it just drew, not
 	 * what it kept from when it last ran, on another table or before a
@@ -583,7 +583,7 @@ static void twin_first(void* arg) {
 		/* not drawn: its picture is never shown (twin_second's is), and
 		 * drawing is about half of a frame's work, on the frame's critical
 		 * path (twins[1]'s runs before the game's frame, on its thread) */
-		emu_frame_blind(&tw->e, twinKeys[twinCur] & 0x3FF);
+		emu_frame_blind(&tw->e, twinKeys[twinCur] & 0xFFFF);
 		/* (how far its pans moved it: put right) */
 		int at = (int16_t) emu_read16(&tw->e, L->view) - (int8_t) emu_read8(&tw->e, T + L->shake);
 		int miss = at - tw->row;
@@ -606,7 +606,7 @@ static void twin_second(void* arg) {
 	 * last ones a copy has (from the game's state) are the game's, placed
 	 * for the game's view) */
 	if (tall_carry(twinProf) && tw->carried) emu_oam_write(&tw->e, tw->oam);
-	emu_frame(&tw->e, twinFrameKeys & 0x3FF);
+	emu_frame(&tw->e, twinFrameKeys & 0xFFFF);
 	memcpy(tw->pic, tw->e.fb, sizeof(tw->pic));
 	if (tall_carry(twinProf)) {
 		emu_oam_read(&tw->e, tw->oam);
@@ -744,7 +744,7 @@ static bool hideWhenOn;
 static void run_frame(uint32_t keys) {
 	frameKeys = keys;
 	unsigned bugAt = bugFrame & (BUG_LOG - 1);
-	bugKeys[bugAt] = keys & 0x3FF;
+	bugKeys[bugAt] = keys & 0xFFFF;
 	bugPoke[bugAt] = 0;
 	uint32_t want = keys & (KX_PAN_L | KX_PAN_R);
 	if (want && ctlProf && ctlProf->controls.snes.pan) {
@@ -806,7 +806,8 @@ static void run_frame(uint32_t keys) {
 	/* the copies' second frame (this one), alongside the game's */
 	twinFrameKeys = keys;
 	for (int i = 0; i < TWINS; ++i) if (twins[i].up) twin_work_start(i, twin_second, &twins[i]);
-	emu_frame(&emu, keys & 0x3FF);
+	emu_set_sticks(&emu, padAxes); /* the DualShock's sticks */
+	emu_frame(&emu, keys & 0xFFFF);
 	++bugFrame;
 	for (int i = 0; i < TWINS; ++i) if (twins[i].up) twin_work_wait(i);
 	if (live) twin_step();
@@ -2081,7 +2082,7 @@ static bool patch_choose(int row, bool later) {
 		if (patchArmed != row) {
 			patchArmed = row;
 			snprintf(patchNote, sizeof(patchNote), "%s",
-			         patch_live_ok() ? tr("Are you sure? A: use them now and carry on from here. B: call it off"): tr("Are you sure? Save your game first. A: restart now. B: call it off"));
+			         patch_live_ok() ? tr("Are you sure? Cross: use them now and carry on from here. Circle: call it off"): tr("Are you sure? Save your game first. Cross: restart now. Circle: call it off"));
 			return false;
 		}
 		patchArmed = -1;
@@ -2110,11 +2111,11 @@ static bool patch_choose(int row, bool later) {
 		bool live = patch_live_ok();
 		patchChoice = keep;
 		if (live)
-			snprintf(patchNote, sizeof(patchNote), tr("Are you sure? A: switch it %s now and carry on from here. Y: not yet (more changes first). B: call it off"),
+			snprintf(patchNote, sizeof(patchNote), tr("Are you sure? Cross: switch it %s now and carry on from here. Square: not yet (more changes first). Circle: call it off"),
 			         on ? tr("off"): tr("on"));
 		else
 			snprintf(patchNote, sizeof(patchNote),
-			         tr("Are you sure? Save your game first. A: restart %s it now. Y: not yet (more changes first). B: call it off"),
+			         tr("Are you sure? Save your game first. Cross: restart %s it now. Square: not yet (more changes first). Circle: call it off"),
 			         on ? tr("without"): tr("with"));
 		return false;
 	}
@@ -3305,7 +3306,7 @@ static void draw_picker(int scr) {
 	ui_fill_round(scr, p.hex, (SDL_Color) { 30, 26, 50, 255 }, mg.rad);
 	ui_label(scr, p.hex.x + p.hex.w / 2, p.hex.y + p.hex.h / 2, SDL_min(p.cap, p.hex.h * 2 / 5), hv, C_TEXT);
 	/* the buttons, centred in a line */
-	const char* btn[4] = { N_("D-pad"), "L1 R1", "X", "Y" };
+	const char* btn[4] = { N_("D-pad"), "L1 R1", "Triangle", "Square" };
 	const char* words[4] = { N_("color"), N_("hue"), N_("presets"), N_("hex")};
 	int hc = p.small, tw = 0;
 	for (int i = 0; i < 4; ++i) tw += hint_width(scr, hc, btn[i], words[i]);
@@ -3394,20 +3395,20 @@ static void ovl_close_all(void) {
  * (run loop, the PS1 layout's branch): PSX-DS's own screens keep B_A / B_B.
  * In games with a layout picker (profile `controls`), the SNES / four-button
  * layout decides the face buttons wherever it's in use. */
-enum { FB_RIGHT, FB_BOTTOM, FB_TOP, FB_LEFT, FB_FACES, FB_L = FB_FACES, FB_R, FB_UP, FB_DOWN, FB_PADLEFT, FB_PADRIGHT, FB_COUNT };
-enum { FG_A, FG_B, FG_L, FG_R, FG_UP, FG_DOWN, FG_LEFT, FG_RIGHT, FG_START, FG_SELECT, FG_TURBO_A, FG_TURBO_B, FG_NONE, FG_COUNT };
-static const char* const fbNames[FB_COUNT] = { "right", "bottom", "top", "left", "l", "r", "dpad_up", "dpad_down", "dpad_left", "dpad_right" };
-static const char* const fgNames[FG_COUNT] = { "a", "b", "l", "r", "up", "down", "left", "right", "start", "select", "turbo_a", "turbo_b", "none" };
-static const char* const fgLabels[FG_COUNT] = { "PS1 Circle", "PS1 Cross", "PS1 L1", "PS1 R1", "PS1 Up", "PS1 Down", "PS1 Left", "PS1 Right", "Start", "Select", "Turbo A", "Turbo B", "Nothing" };
+enum { FB_RIGHT, FB_BOTTOM, FB_TOP, FB_LEFT, FB_FACES, FB_L = FB_FACES, FB_R, FB_UP, FB_DOWN, FB_PADLEFT, FB_PADRIGHT, FB_L2, FB_R2, FB_L3, FB_R3, FB_COUNT };
+enum { FG_A, FG_B, FG_L, FG_R, FG_UP, FG_DOWN, FG_LEFT, FG_RIGHT, FG_START, FG_SELECT, FG_TRIANGLE, FG_SQUARE, FG_L2, FG_R2, FG_L3, FG_R3, FG_TURBO_A, FG_TURBO_B, FG_NONE, FG_COUNT };
+static const char* const fbNames[FB_COUNT] = { "right", "bottom", "top", "left", "l", "r", "dpad_up", "dpad_down", "dpad_left", "dpad_right", "l2", "r2", "l3", "r3" };
+static const char* const fgNames[FG_COUNT] = { "a", "b", "l", "r", "up", "down", "left", "right", "start", "select", "triangle", "square", "l2", "r2", "l3", "r3", "turbo_a", "turbo_b", "none" };
+static const char* const fgLabels[FG_COUNT] = { "Circle", "Cross", "L1", "R1", "Up", "Down", "Left", "Right", "Start", "Select", "Triangle", "Square", "L2", "R2", "L3", "R3", "Turbo Circle", "Turbo Cross", "Nothing" };
 static int fbMap[FB_COUNT]; /* each face button's FG_ */
 static bool fbSet;          /* a choice in force (else ab_swap's) */
 
 /* from the settings in force (called again whenever one changes) */
 static void fb_default(void) {
-	fbMap[FB_RIGHT] = cfg->abSwap ? FG_B : FG_A;
-	fbMap[FB_BOTTOM] = cfg->abSwap ? FG_A : FG_B;
-	fbMap[FB_TOP] = fbMap[FB_LEFT] = FG_NONE;
+	/* the PlayStation's own layout, by position (ab_swap is for the menus only) */
+	fbMap[FB_RIGHT] = FG_A, fbMap[FB_BOTTOM] = FG_B, fbMap[FB_TOP] = FG_TRIANGLE, fbMap[FB_LEFT] = FG_SQUARE;
 	fbMap[FB_L] = FG_L, fbMap[FB_R] = FG_R, fbMap[FB_UP] = FG_UP, fbMap[FB_DOWN] = FG_DOWN, fbMap[FB_PADLEFT] = FG_LEFT, fbMap[FB_PADRIGHT] = FG_RIGHT;
+	fbMap[FB_L2] = FG_L2, fbMap[FB_R2] = FG_R2, fbMap[FB_L3] = FG_L3, fbMap[FB_R3] = FG_R3;
 	fbSet = false;
 	for (int i = 0; i < FB_COUNT; ++i)
 		for (int j = 0; j < FG_COUNT && cfg->faceBtn[i][0]; ++j)
@@ -3457,12 +3458,14 @@ static void fb_load(void) {
 
 /* the PS1 keys the face buttons give the game (the PS1 layout) */
 static uint32_t fb_keys(bool faces) {
-	static const uint32_t key[FG_COUNT] = { K_A, K_B, K_L, K_R, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_START, K_SELECT, K_A, K_B, 0 };
+	static const uint32_t key[FG_COUNT] = { K_A, K_B, K_L, K_R, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_START, K_SELECT,
+	                                        K_X, K_Y, K_L2, K_R2, K_L3, K_R3, K_A, K_B, 0 };
 	/* Turbo A / B (#55): the key goes down and up turbo_rate times a second (60 frames a second) */
 	int period = SDL_clamp(60 / SDL_max(1, cfg->turboRate), 2, 12);
 	bool turboOn = (frameCount % (uint64_t) period) < (uint64_t) (period / 2);
-	/* (ui.c puts the bottom button on B_A with ab_swap: by position again) */
-	int phys[FB_COUNT] = { cfg->abSwap ? B_B : B_A, cfg->abSwap ? B_A : B_B, B_X, B_Y, B_L, B_R, B_UP, B_DOWN, B_LEFT, B_RIGHT };
+	/* (ui.c puts the bottom button on B_A, the right one on B_B, swapped with
+	 * ab_swap: by position again) */
+	int phys[FB_COUNT] = { cfg->abSwap ? B_A : B_B, cfg->abSwap ? B_B : B_A, B_X, B_Y, B_L, B_R, B_UP, B_DOWN, B_LEFT, B_RIGHT, B_L2, B_R2, B_L3, B_R3 };
 	uint32_t keys = 0;
 	/* faces only, or the shoulders and the D-pad (only = false) */
 	for (int i = faces ? 0 : FB_FACES; i < (faces ? FB_FACES : FB_COUNT); ++i)
@@ -3595,7 +3598,7 @@ static void draw_rows_page(int scr, const MenuGeom* mg) {
 		}
 	}
 	if (menuNote[0]) note = menuNote, noteGold = true;
-	else if (rowSel == 0) note = N_("A: the one lit above. Y: all games. X: undo this game's value");
+	else if (rowSel == 0) note = N_("Cross: the one lit above. Square: all games. Triangle: undo this game's value");
 	if (n > ROW_VIS) {
 		/* more rows than fit: a bar at the right edge, where the rows are in the list */
 		SDL_Rect a = srow_rect(scr, rowTop + 1), z = srow_rect(scr, rowTop + ROW_VIS);
@@ -5516,14 +5519,14 @@ static void ctl_draw(int s) {
 			ctl_button(s, BRAND_PILL_L, &t, 32, 27, t.w * 34 / 100);
 			ctl_button(s, BRAND_PILL_R, &t, 68, 27, t.w * 34 / 100);
 			d = t.w * 28 / 100;
-			ctl_button(s, BRAND_BTN_B, &t, 34, 69, d);
-			ctl_button(s, BRAND_BTN_A, &t, 66, 60, d);
+			ctl_button(s, BRAND_BTN_CROSS, &t, 34, 69, d);
+			ctl_button(s, BRAND_BTN_CIRCLE, &t, 66, 60, d);
 		} else if (i == CTL_FOUR) {
 			d = t.w * 28 / 100;
-			ctl_button(s, BRAND_BTN_A, &t, 50, 27, d);
+			ctl_button(s, BRAND_BTN_CIRCLE, &t, 50, 27, d);
 			ctl_button(s, BRAND_BTN_L, &t, 27, 50, d);
 			ctl_button(s, BRAND_BTN_R, &t, 73, 50, d);
-			ctl_button(s, BRAND_BTN_B, &t, 50, 73, d);
+			ctl_button(s, BRAND_BTN_CROSS, &t, 50, 73, d);
 		} else {
 			ui_label(s, t.x + t.w / 2, t.y + t.h / 2, g.cap * 4 / 5, "Auto", G_TEXT);
 		}
@@ -5990,9 +5993,10 @@ static uint8_t* read_whole(const char* path, size_t* size) {
 }
 
 static void keys_name(char* out, size_t size, unsigned k) {
-	static const char* const names[10] = { "A", "B", "SELECT", "START", "RIGHT", "LEFT", "UP", "DOWN", "R", "L" };
+	static const char* const names[16] = { "CIRCLE", "CROSS", "SELECT", "START", "RIGHT", "LEFT", "UP", "DOWN", "R1", "L1",
+	                                       "TRIANGLE", "SQUARE", "L2", "R2", "L3", "R3" };
 	out[0] = 0;
-	for (int i = 0; i < 10; ++i) {
+	for (int i = 0; i < 16; ++i) {
 		if (k & (1u << i)) snprintf(out + strlen(out), size - strlen(out), "%s%s", out[0] ? "+" : "", names[i]);
 	}
 	if (!out[0]) snprintf(out, size, "-");
@@ -8057,6 +8061,7 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 	ROW(PG_SCREENS, "@overlay");
 	ROW(PG_SCREENS, "brightness_top");
 	if (nScreens >= 2) ROW(PG_SCREENS, "brightness_bottom");
+	ROW(PG_CONTROLS, "pad_type");
 	ROW(PG_CONTROLS, "left_stick_dpad");
 	ROW(PG_CONTROLS, "ab_swap");
 	ROW(PG_CONTROLS, "button_right");
@@ -8069,6 +8074,10 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 	ROW(PG_CONTROLS, "button_dpad_down");
 	ROW(PG_CONTROLS, "button_dpad_left");
 	ROW(PG_CONTROLS, "button_dpad_right");
+	ROW(PG_CONTROLS, "button_l2");
+	ROW(PG_CONTROLS, "button_r2");
+	ROW(PG_CONTROLS, "button_l3");
+	ROW(PG_CONTROLS, "button_r3");
 	ROW(PG_CONTROLS, "turbo_rate");
 	ROW(PG_SPEED, "show_fps");
 	ROW(PG_SPEED, "match_display");
@@ -8849,7 +8858,7 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 				/* by position, as the profile says (Super Mario Advance 2: B
 				 * bottom jumps, Y left runs, A right and X top spin jump) */
 				const typeof(ctlProf->controls.snes)* sn = &ctlProf->controls.snes;
-				int right = cfg->abSwap ? B_B : B_A, bottom = cfg->abSwap ? B_A : B_B;
+				int right = cfg->abSwap ? B_A : B_B, bottom = cfg->abSwap ? B_B : B_A;
 				if (HELD(right)) keys |= sn->right;
 				if (HELD(bottom)) keys |= sn->bottom;
 				if (HELD(B_X)) keys |= sn->top;
@@ -8857,7 +8866,7 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 			} else if (ctl_four() && !ctl_snes()) {
 				/* by position: top A, bottom B, left L, right R (on the RG DS
 				 * the top face button arrives as X, the left one as Y) */
-				int right = cfg->abSwap ? B_B : B_A, bottom = cfg->abSwap ? B_A : B_B;
+				int right = cfg->abSwap ? B_A : B_B, bottom = cfg->abSwap ? B_B : B_A;
 				if (HELD(B_X)) keys |= K_A;
 				if (HELD(bottom)) keys |= K_B;
 				if (HELD(B_Y)) keys |= K_L;
@@ -8896,8 +8905,12 @@ static enum GameExit game_run_inner(Config* c, const char* rom, bool fromLibrary
 			lastKeys = keys;
 		}
 
-		bool rewinding = cfg->rewind && btnNow[B_L2];
-		bool ff = cfg->fastForward && btnNow[B_R2] && !rewinding;
+		/* fast forward and rewind: the hotkey button with R2 / L2 (L2 and R2
+		 * alone are the game's) */
+		bool rewinding = cfg->rewind && btnNow[B_L2] && btnNow[modBtn];
+		bool ff = cfg->fastForward && btnNow[B_R2] && btnNow[modBtn] && !rewinding;
+		if (ff) keys &= ~K_R2;
+		if (rewinding) keys &= ~K_L2;
 		ffBox = ff;
 		/* Max (ff_speed 0): as many frames as fit in about 70% of a display
 		 * frame (the rest for drawing it), up to FF_MAX_RUNS; the sound

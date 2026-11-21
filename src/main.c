@@ -182,6 +182,10 @@ int main(int argc, char** argv) {
 		emu_set_option("swanstation_CPU_FastmemMode", "LUT");
 		emu_set_option("swanstation_GPU_Renderer", "Software");
 		emu_set_option("swanstation_Display_ShowOSDMessages", "false");
+		/* the controller: a DualShock unless the digital pad is chosen */
+		emu_set_dualshock(cfg.padType != 2);
+		emu_set_option("swanstation_Controller1_ForceAnalog", cfg.padType == 0 ? "true" : "false");
+		emu_set_option("swanstation_Controller_AnalogCombo", "1"); /* L1 + R1 + L3 + R3 */
 #ifdef __ANDROID__
 		android_core_setup(); /* the APK's two copies of the core */
 #else

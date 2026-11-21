@@ -38,8 +38,16 @@ static uint32_t parse_keys(const char* s) {
 	strncpy(buf, s, sizeof(buf) - 1);
 	buf[sizeof(buf) - 1] = 0;
 	for (char* t = strtok(buf, "+"); t; t = strtok(NULL, "+")) {
-		if (!strcmp(t, "A")) k |= K_A;
-		else if (!strcmp(t, "B")) k |= K_B;
+		if (!strcmp(t, "A") || !strcmp(t, "CIRCLE")) k |= K_A;
+		else if (!strcmp(t, "B") || !strcmp(t, "CROSS")) k |= K_B;
+		else if (!strcmp(t, "TRIANGLE")) k |= K_X;
+		else if (!strcmp(t, "SQUARE")) k |= K_Y;
+		else if (!strcmp(t, "L2")) k |= K_L2;
+		else if (!strcmp(t, "R2")) k |= K_R2;
+		else if (!strcmp(t, "L3")) k |= K_L3;
+		else if (!strcmp(t, "R3")) k |= K_R3;
+		else if (!strcmp(t, "L1")) k |= K_L;
+		else if (!strcmp(t, "R1")) k |= K_R;
 		else if (!strcmp(t, "SELECT") || !strcmp(t, "SEL")) k |= K_SELECT;
 		else if (!strcmp(t, "START")) k |= K_START;
 		else if (!strcmp(t, "RIGHT")) k |= K_RIGHT;

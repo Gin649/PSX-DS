@@ -31,12 +31,12 @@ static const Step steps[] = {
 	{ "dpdown", N_("Down"), "on the D-pad", false },
 	{ "dpleft", N_("Left"), "on the D-pad", false },
 	{ "dpright", N_("Right"), "on the D-pad", false },
-	{ "b", "A", N_("the right face button"), false },
-	{ "a", "B", N_("the bottom face button"), false },
-	{ "x", "X", N_("the top face button"), false },
-	{ "y", "Y", N_("the left face button"), false },
-	{ "leftshoulder", "L", N_("the left shoulder button"), false },
-	{ "rightshoulder", "R", N_("the right shoulder button"), false },
+	{ "b", "Circle", N_("the right face button"), false },
+	{ "a", "Cross", N_("the bottom face button"), false },
+	{ "x", "Triangle", N_("the top face button"), false },
+	{ "y", "Square", N_("the left face button"), false },
+	{ "leftshoulder", "L1", N_("the left shoulder button"), false },
+	{ "rightshoulder", "R1", N_("the right shoulder button"), false },
 	{ "lefttrigger", "L2", N_("the second left shoulder button"), false },
 	{ "righttrigger", "R2", N_("the second right shoulder button"), false },
 	{ "back", "Select", "", false },
@@ -45,6 +45,9 @@ static const Step steps[] = {
 	{ "leftstick", "L3", N_("press the left stick in"), false },
 	{ "lefty", N_("Left stick: up"), N_("push the left stick up"), true },
 	{ "leftx", N_("Left stick: left"), N_("push the left stick left"), true },
+	{ "rightstick", "R3", N_("press the right stick in"), false },
+	{ "righty", N_("Right stick: up"), N_("push the right stick up"), true },
+	{ "rightx", N_("Right stick: left"), N_("push the right stick left"), true },
 };
 #define N_STEPS ((int) (sizeof(steps) / sizeof(*steps)))
 
@@ -247,7 +250,7 @@ static void draw(int scr, const View_* v, bool touch) {
 		ui_label(scr, r.w / 2, r.h / 2 - px * 20, px * 10, head, C_TEXT);
 		const char* body = v->noPad ? N_("Connect a controller and try again."): v->doneText;
 		ui_font_wrap(scr, TF_BODY, px * 12, r.h / 2, tw, px * 5, body, C_DIM);
-		ui_font_text(scr, TF_BODY, r.w / 2, r.h - px * 14, px * 4, touch ? "Press A or tap to close" : "Press A to close", C_DIM, 0);
+		ui_font_text(scr, TF_BODY, r.w / 2, r.h - px * 14, px * 4, touch ? "Press Cross or tap to close" : "Press Cross to close", C_DIM, 0);
 		return;
 	}
 	char line[96];

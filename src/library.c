@@ -718,25 +718,19 @@ static void draw_preview(Config* cfg, int scr, int sel) {
 	int m = px * 6;
 	int headH = px * 21;
 	int ourW = draw_brand(scr, BRAND_LOGO, m, m, headH);
-	{
-		/* where to find us, under our logo, as the version number is drawn
-		 * (the pixel font's capitals; without https://, so it stays clear
-		 * of a wide game logo on the right) */
-		int vpx = SDL_max(1, px / 2);
-		ui_text(scr, m + px * 2, m + headH + px * 2, vpx, "GITHUB.COM/KYANNON/PSX-DS", C_DIM);
-	}
 
 	/* button hints along the bottom */
 	int ty = r.h - px * 11, d = px * 10, bx = m;
 	int gy = ty + px * 7 / 2 - d / 2;
 	int cap = px * 5, cy = gy + d / 2, wordW = px * 18;
-	bx += draw_brand(scr, BRAND_BTN_A, bx, gy, d) + px * 2;
+	/* (confirm and back: Cross and Circle, or the other way with ab_swap) */
+	bx += draw_brand(scr, cfg->abSwap ? BRAND_BTN_CIRCLE : BRAND_BTN_CROSS, bx, gy, d) + px * 2;
 	{ /* (a word wider than its slot, as in German, makes the slot wider) */
 		int ww = SDL_max(wordW, ui_label_width(scr, cap, "Play"));
 		ui_label(scr, bx + ww / 2, cy, cap, "Play", C_TEXT);
 		bx += ww + px * 8;
 	}
-	bx += draw_brand(scr, BRAND_BTN_B, bx, gy, d) + px * 2;
+	bx += draw_brand(scr, cfg->abSwap ? BRAND_BTN_CROSS : BRAND_BTN_CIRCLE, bx, gy, d) + px * 2;
 	ui_label(scr, bx + SDL_max(wordW, ui_label_width(scr, cap, "Quit")) / 2, cy, cap, "Quit", C_TEXT);
 
 	{
@@ -1326,13 +1320,13 @@ enum { SP_HOME = -1, SP_SYSTEM = 6, SP_COUNT = 7 };
 typedef struct {
 	const char* name;
 	const char* sub;
-	const char* keys[20];
+	const char* keys[24];
 } SetPage;
 static const SetPage setPages[SP_SYSTEM] = {
 	{ N_("Games"), N_("Which games, names, saving"), { "show_all", "name_tags", "save_on_quit", "auto_load", "custom_logos", "quick_bar_hint" } },
 	{ N_("Display"), N_("Scale, shader, theme, color"), { "scale", "map_scale", "shader", "lcd_strength", "color_correction", "lcd_ghosting", "smooth", "theme", "accent" } },
 	{ "Screens", N_("Placement, overlays"), { "swap", "screen_match", "screen_placement", "overlays", "overlay_screens", "bezel_logo", "brightness_top", "brightness_bottom" } },
-	{ "Controls", N_("Stick, buttons, hotkeys"), { "left_stick_dpad", "ab_swap", "button_right", "button_bottom", "button_top", "button_left", "button_l", "button_r", "button_dpad_up", "button_dpad_down", "button_dpad_left", "button_dpad_right", "turbo_rate", "@map", "@hotkeys" } },
+	{ "Controls", N_("Controller, buttons, hotkeys"), { "pad_type", "left_stick_dpad", "ab_swap", "button_right", "button_bottom", "button_top", "button_left", "button_l", "button_r", "button_l2", "button_r2", "button_l3", "button_r3", "button_dpad_up", "button_dpad_down", "button_dpad_left", "button_dpad_right", "turbo_rate", "@map", "@hotkeys" } },
 	{ N_("Speed and sound"), N_("Rewind, fast forward"), { "show_fps", "match_display", "frame_buffer", "rewind", "rewind_seconds", "fast_forward", "audio_latency", "performance" } },
 	{ "Second screen", N_("The map and the logo"), { "map", "map_interval", "pinball_live" } },
 };
@@ -2415,7 +2409,7 @@ static void draw_wait(int scr, const char* name) {
 	char line[200];
 	fit_text(line, sizeof(line), TF_BODY, px * 4, name, r.w - px * 16);
 	ui_font_text(scr, TF_BODY, r.w / 2, cy + px * 2, px * 4, line, C_DIM, 0);
-	ui_font_text(scr, TF_BODY, r.w / 2, cy + px * 14, px * 4, "First run only. B: back", C_DIM, 0);
+	ui_font_text(scr, TF_BODY, r.w / 2, cy + px * 14, px * 4, "First run only. Circle: back", C_DIM, 0);
 }
 
 /* The logos (and map borders) still to make, in the order they'll be seen:

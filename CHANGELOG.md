@@ -4,7 +4,10 @@
 
 - PSX-DS: a PlayStation fork of GBA DS by kyannon. SwanStation replaces mGBA, and everything specific to Game Boy Advance games (their second-screen profiles, logos, dump lists, patches list, tests and tools) is removed.
 - PS1 disc images (.cue, .chd, .pbp, .m3u and others) show in the game list; save states, memory cards, cheats and sound work.
-- PS1 buttons: Triangle, Square, L2, R2, L3 and R3 as well as the usual ones.
+- Controls for a PlayStation pad: every button reaches the game by position (Circle right, Cross bottom, Triangle top, Square left, L1/R1, L2/R2, L3/R3), each one remappable in Settings > Controls.
+- A DualShock with both analog sticks (Settings > Controls > Controller): analog on from the start, or switched with L1 + R1 + L3 + R3 for games that don't like it, or the first digital pad.
+- Menus: Cross selects and Circle goes back (Confirm button: Circle, for the Japanese way). Button prompts and menu text show PlayStation buttons.
+- Fast forward and rewind: the hotkey button with R2 / L2, so L2 and R2 alone are the game's. The left stick no longer works as the D-pad unless that's switched on.
 
 Known issues:
 - No game has its second screen yet; the second screen shows nothing for now.

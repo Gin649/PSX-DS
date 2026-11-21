@@ -80,6 +80,12 @@ typedef struct Emu {
 	volatile bool* cancel;
 } Emu;
 
+/* The controller in port 1: a DualShock (analog, both sticks) or the first
+ * digital pad. Set before emu_open. */
+void emu_set_dualshock(bool on);
+/* The DualShock's sticks for the next frames: left X, left Y, right X, right Y. */
+void emu_set_sticks(Emu* e, const int16_t axes[4]);
+
 /* savePath may be NULL (no battery save attached). */
 bool emu_open(Emu* e, const char* romPath, const char* savePath, bool audio);
 /* ROMs may also be in a .zip or .7z (the first PS1 ROM inside is used). */

@@ -42,10 +42,12 @@ extern int nScreens;
 
 /* Logical buttons (after face-button mapping). */
 enum {
-	B_A, B_B, B_X, B_Y, B_START, B_SELECT, B_HOME, B_L, B_R, B_L2, B_R2, B_L3,
+	B_A, B_B, B_X, B_Y, B_START, B_SELECT, B_HOME, B_L, B_R, B_L2, B_R2, B_L3, B_R3,
 	B_UP, B_DOWN, B_LEFT, B_RIGHT, B_COUNT
 };
 extern bool btnNow[B_COUNT], btnPrev[B_COUNT];
+/* the sticks, for the DualShock: left X, left Y, right X, right Y (-32768..32767) */
+extern int16_t padAxes[4];
 static inline bool btn_pressed(int b) {
 	return btnNow[b] && !btnPrev[b];
 }

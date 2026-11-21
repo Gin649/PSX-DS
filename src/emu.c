@@ -67,6 +67,7 @@ typedef struct Slot {
 
 	unsigned pixfmt;
 	uint16_t keys; /* libretro joypad bits */
+	int16_t axes[4]; /* the DualShock's sticks */
 	int av;        /* bit 0 video, bit 1 audio */
 	unsigned rate;
 	int srcW, srcH; /* the core's last picture size */
@@ -86,6 +87,14 @@ static int nCorePaths;
 static char sysDir[1024], saveDir[1024];
 static struct { char key[96]; char value[64]; } opts[MAX_OPTS];
 static int nOpts;
+static bool dualshock = true;
+
+void emu_set_dualshock(bool on) { dualshock = on; }
+
+void emu_set_sticks(Emu* e, const int16_t axes[4]) {
+	Slot* s = (Slot*)e->core;
+	if (s) memcpy(s->axes, axes, sizeof s->axes);
+}
 
 void emu_set_core_paths(const char* const* paths, int n) {
 	nCorePaths = n < SLOTS ? n : SLOTS;
@@ -161,8 +170,12 @@ static void video_slot(int i, const void* data, unsigned w, unsigned h, size_t p
 }
 
 static int16_t input_slot(int i, unsigned port, unsigned device, unsigned index, unsigned id) {
-	(void)index;
-	if (port != 0 || (device & RETRO_DEVICE_MASK) != RETRO_DEVICE_JOYPAD) return 0;
+	if (port != 0) return 0;
+	if ((device & RETRO_DEVICE_MASK) == RETRO_DEVICE_ANALOG) {
+		if (index > RETRO_DEVICE_INDEX_ANALOG_RIGHT || id > RETRO_DEVICE_ID_ANALOG_Y) return 0;
+		return slots[i].axes[index * 2 + id];
+	}
+	if ((device & RETRO_DEVICE_MASK) != RETRO_DEVICE_JOYPAD) return 0;
 	uint16_t k = slots[i].keys;
 	if (id == RETRO_DEVICE_ID_JOYPAD_MASK) return (int16_t)k;
 	return id < 16 ? (k >> id) & 1 : 0;
@@ -502,7 +515,7 @@ bool emu_open(Emu* e, const char* romPath, const char* savePath, bool audio) {
 		memset(e, 0, sizeof *e);
 		return false;
 	}
-	s->set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
+	s->set_controller_port_device(0, dualshock ? RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_ANALOG, 0) : RETRO_DEVICE_JOYPAD);
 	struct retro_system_av_info av;
 	memset(&av, 0, sizeof av);
 	s->get_system_av_info(&av);
